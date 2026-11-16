@@ -1,0 +1,104 @@
+name: ARMv7a 3.3.0 compatibility build
+
+on:
+  push:
+    branches:
+      - port/armv7a-3.3.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: armv7a-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-armv7a:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch pinned ARMv7 native build overlay
+        run: |
+          git clone https://github.com/jacob-ayang/rikkahub-armv7a.git "$RUNNER_TEMP/armv7-overlay"
+          git -C "$RUNNER_TEMP/armv7-overlay" checkout 70b7cae6f8c5200bc6af7337a9c83b991bdc1f14
+          cp -a "$RUNNER_TEMP/armv7-overlay/fork" ./fork
+          mkdir -p scripts/ci
+          cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/apply-overlay.py" scripts/ci/
+          cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/build-native.py" scripts/ci/
+          cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/setup-android.py" scripts/ci/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = Path("fork/config.json")
+          data = json.loads(cfg.read_text())
+          data["repository"] = "mafadzanharitz-max/rikkahub"
+          cfg.write_text(json.dumps(data, indent=2) + "\\n")
+          for name in ("Armv7Updates.kt", "Armv7UpdatesTest.kt"):
+              path = Path("fork/templates") / name
+              path.write_text(path.read_text().replace(
+                  "jacob-ayang/rikkahub-armv7a", "mafadzanharitz-max/rikkahub"
+              ))
+          PY
+      - name: Apply fail-closed ARMv7 source adaptations
+        run: python3 scripts/ci/apply-overlay.py .
+      - name: Install pinned Android SDK, NDK and CMake
+        run: python3 scripts/ci/setup-android.py
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Create CI-only Google Services configuration
+        run: |
+          cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "rikkahub-armv7-ci",
+              "storage_bucket": "rikkahub-armv7-ci.appspot.com"
+            },
+            "client": [{
+              "client_info": {
+                "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                "android_client_info": {"package_name": "me.rerere.rikkahub.debug"}
+              },
+              "api_key": [{"current_key": "ci-placeholder-not-a-real-key"}],
+              "services": {}
+            }],
+            "configuration_version": "1"
+          }
+          JSON
+      - name: Build checksum-locked ARMv7 native components
+        run: python3 scripts/ci/build-native.py
+      - name: Compile and run regression tests
+        run: |
+          ./gradlew :app:assembleGithubDebug :app:testGithubDebugUnitTest \
+            :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
+            --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+      - name: Verify APK ABI and required native components
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          apk = next(pathlib.Path("app/build/outputs/apk/github/debug").glob("*.apk"))
+          with zipfile.ZipFile(apk) as archive:
+              libs = [n for n in archive.namelist() if n.startswith("lib/") and n.endswith(".so")]
+              assert libs, "APK contains no native libraries"
+              wrong = [n for n in libs if not n.startswith("lib/armeabi-v7a/")]
+              assert not wrong, f"Unexpected ABI entries: {wrong}"
+              names = {pathlib.PurePosixPath(n).name for n in libs}
+              required = {"libsimple.so", "libtermux.so", "libworkspace.so",
+                          "libproot_exec.so", "libproot_loader.so"}
+              assert required <= names, f"Missing native components: {sorted(required - names)}"
+              print(f"Validated {len(libs)} ARMv7 ELF libraries in {apk}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RikkaHub-3.3.0-ARMv7a-debug
+          path: app/build/outputs/apk/github/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove generated CI configuration
+        if: always()
+        run: rm -f app/google-services.json
