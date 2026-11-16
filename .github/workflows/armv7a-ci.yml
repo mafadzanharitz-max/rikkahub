@@ -38,7 +38,7 @@ jobs:
           cfg = Path("fork/config.json")
           data = json.loads(cfg.read_text())
           data["repository"] = "mafadzanharitz-max/rikkahub"
-          cfg.write_text(json.dumps(data, indent=2) + "\\n")
+          cfg.write_text(json.dumps(data, indent=2) + "\n")
           for name in ("Armv7Updates.kt", "Armv7UpdatesTest.kt"):
               path = Path("fork/templates") / name
               path.write_text(path.read_text().replace(
