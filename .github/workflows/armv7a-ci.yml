@@ -105,6 +105,48 @@ jobs:
               assert required <= names, f"Missing native components: {sorted(required - names)}"
               print(f"Validated {len(libs)} ARMv7 ELF libraries in {apk}")
           PY
+      - name: Report APK size breakdown
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          apk = next(pathlib.Path("app/build/outputs/apk/github/debug").glob("*.apk"))
+          groups = {"DEX": [], "Native": [], "Resources": [], "Assets": [], "Other": []}
+          with zipfile.ZipFile(apk) as archive:
+              entries = [(info.filename, info.file_size, info.compress_size)
+                         for info in archive.infolist() if not info.is_dir()]
+              for name, raw, packed in entries:
+                  if name.endswith(".dex"):
+                      group = "DEX"
+                  elif name.startswith("lib/") and name.endswith(".so"):
+                      group = "Native"
+                  elif name.startswith("res/") or name == "resources.arsc":
+                      group = "Resources"
+                  elif name.startswith("assets/"):
+                      group = "Assets"
+                  else:
+                      group = "Other"
+                  groups[group].append((name, raw, packed))
+              total_raw = sum(raw for _, raw, _ in entries)
+              total_packed = sum(packed for _, _, packed in entries)
+              lines = [
+                  "## APK size audit",
+                  f"- APK file: **{apk.stat().st_size / 1024 / 1024:.2f} MiB**",
+                  f"- ZIP entries: **{len(entries)}**",
+                  "",
+                  "| Group | Uncompressed | Compressed |",
+                  "|---|---:|---:|",
+              ]
+              for group, items in groups.items():
+                  raw = sum(x[1] for x in items)
+                  packed = sum(x[2] for x in items)
+                  lines.append(f"| {group} | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
+              lines += ["", "### 15 largest uncompressed entries", "| Entry | Uncompressed | Compressed |", "|---|---:|---:|"]
+              for name, raw, packed in sorted(entries, key=lambda x: x[1], reverse=True)[:15]:
+                  lines.append(f"| `{name}` | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
+              pathlib.Path("/tmp/apk-audit-summary.md").write_text("\n".join(lines) + "\n")
+              print("\n".join(lines))
+          PY
+          cat /tmp/apk-audit-summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: RikkaHub-3.3.0-ARMv7a-debug
