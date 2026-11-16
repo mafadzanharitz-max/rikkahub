@@ -153,6 +153,90 @@ jobs:
           path: app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Remove generated CI configuration
+      - name: Create temporary CI-only release signing key
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/rikkahub-ci-release.jks"
+          STORE_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" \
+            -storepass "$STORE_PASSWORD" \
+            -keypass "$STORE_PASSWORD" \
+            -alias ci-release \
+            -dname "CN=RikkaHub CI Temporary,O=CI,C=US" \
+            -keyalg RSA -keysize 2048 -validity 2
+          {
+            echo "storeFile=$KEYSTORE"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=ci-release"
+            echo "keyPassword=$STORE_PASSWORD"
+          } > local.properties
+      - name: Build optimized ARMv7 release APK
+        run: |
+          ./gradlew :app:assembleGithubRelease \
+            --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+      - name: Verify and report optimized release APK
+        run: |
+          python3 - <<'PY'
+          import pathlib, zipfile
+          apk_dir = pathlib.Path("app/build/outputs/apk/github/release")
+          apks = list(apk_dir.glob("*.apk"))
+          assert len(apks) == 1, f"Expected one release APK, found: {apks}"
+          apk = apks[0]
+          groups = {"DEX": [], "Native": [], "Resources": [], "Assets": [], "Other": []}
+          with zipfile.ZipFile(apk) as archive:
+              entries = [(i.filename, i.file_size, i.compress_size)
+                         for i in archive.infolist() if not i.is_dir()]
+              libs = [n for n, _, _ in entries if n.startswith("lib/") and n.endswith(".so")]
+              assert libs, "Release APK contains no native libraries"
+              wrong = [n for n in libs if not n.startswith("lib/armeabi-v7a/")]
+              assert not wrong, f"Unexpected release ABI entries: {wrong}"
+              names = {pathlib.PurePosixPath(n).name for n in libs}
+              required = {"libsimple.so", "libtermux.so", "libworkspace.so",
+                          "libproot_exec.so", "libproot_loader.so"}
+              assert required <= names, f"Missing native components: {sorted(required - names)}"
+              for name, raw, packed in entries:
+                  if name.endswith(".dex"):
+                      group = "DEX"
+                  elif name.startswith("lib/") and name.endswith(".so"):
+                      group = "Native"
+                  elif name.startswith("res/") or name == "resources.arsc":
+                      group = "Resources"
+                  elif name.startswith("assets/"):
+                      group = "Assets"
+                  else:
+                      group = "Other"
+                  groups[group].append((name, raw, packed))
+              lines = [
+                  "## Optimized ARMv7 Release APK audit",
+                  f"- APK: **{apk}**",
+                  f"- APK file size: **{apk.stat().st_size / 1024 / 1024:.2f} MiB**",
+                  f"- ZIP entries: **{len(entries)}**",
+                  f"- Verified native libraries: **{len(libs)} ARMv7 ELF entries**",
+                  "",
+                  "| Group | Uncompressed | Compressed |",
+                  "|---|---:|---:|",
+              ]
+              for group, items in groups.items():
+                  raw = sum(x[1] for x in items)
+                  packed = sum(x[2] for x in items)
+                  lines.append(f"| {group} | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
+              lines += ["", "### 15 largest release entries", "| Entry | Uncompressed | Compressed |", "|---|---:|---:|"]
+              for name, raw, packed in sorted(entries, key=lambda x: x[1], reverse=True)[:15]:
+                  lines.append(f"| `{name}` | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
+              report = "\n".join(lines) + "\n"
+              print(report)
+              pathlib.Path("/tmp/release-apk-audit.md").write_text(report)
+          PY
+          cat /tmp/release-apk-audit.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: RikkaHub-3.3.0-ARMv7a-release-size-test
+          path: app/build/outputs/apk/github/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove generated CI configuration and temporary signing material
         if: always()
-        run: rm -f app/google-services.json
+        run: |
+          rm -f app/google-services.json local.properties
+          rm -f "$RUNNER_TEMP/rikkahub-ci-release.jks"
