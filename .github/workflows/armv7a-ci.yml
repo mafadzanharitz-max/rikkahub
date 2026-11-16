@@ -59,6 +59,8 @@ jobs:
           PY
       - name: Apply fail-closed ARMv7 source adaptations
         run: python3 scripts/ci/apply-overlay.py .
+      - name: Make an empty fork release feed a clean no-update state
+        run: python3 scripts/ci/patch-armv7-updater.py
       - name: Install pinned Android SDK, NDK and CMake
         run: python3 scripts/ci/setup-android.py
       - uses: gradle/actions/setup-gradle@v6
