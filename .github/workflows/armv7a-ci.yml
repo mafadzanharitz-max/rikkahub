@@ -97,10 +97,29 @@ jobs:
           JSON
       - name: Build checksum-locked ARMv7 native components
         run: python3 scripts/ci/build-native.py
-      - name: Compile and run regression tests
+      - name: Create temporary CI-only release signing key
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/rikkahub-ci-release.jks"
+          STORE_PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" \
+            -storepass "$STORE_PASSWORD" \
+            -keypass "$STORE_PASSWORD" \
+            -alias ci-release \
+            -dname "CN=RikkaHub CI Temporary,O=CI,C=US" \
+            -keyalg RSA -keysize 2048 -validity 2
+          {
+            echo "storeFile=$KEYSTORE"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=ci-release"
+            echo "keyPassword=$STORE_PASSWORD"
+          } > local.properties
+      - name: Compile, test, and build Debug plus optimized Release
         run: |
           ./gradlew :app:assembleGithubDebug :app:testGithubDebugUnitTest \
             :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
+            :app:assembleGithubRelease \
             --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
       - name: Verify APK ABI and required native components
         run: |
@@ -166,28 +185,6 @@ jobs:
           path: app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Create temporary CI-only release signing key
-        run: |
-          set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/rikkahub-ci-release.jks"
-          STORE_PASSWORD="$(openssl rand -hex 24)"
-          keytool -genkeypair -noprompt \
-            -keystore "$KEYSTORE" \
-            -storepass "$STORE_PASSWORD" \
-            -keypass "$STORE_PASSWORD" \
-            -alias ci-release \
-            -dname "CN=RikkaHub CI Temporary,O=CI,C=US" \
-            -keyalg RSA -keysize 2048 -validity 2
-          {
-            echo "storeFile=$KEYSTORE"
-            echo "storePassword=$STORE_PASSWORD"
-            echo "keyAlias=ci-release"
-            echo "keyPassword=$STORE_PASSWORD"
-          } > local.properties
-      - name: Build optimized ARMv7 release APK
-        run: |
-          ./gradlew :app:assembleGithubRelease \
-            --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
       - name: Verify and report optimized release APK
         run: |
           python3 - <<'PY'
