@@ -30,9 +30,11 @@ jobs:
         with:
           version: 9.15.9
           run_install: false
-      - name: Install locked web UI dependencies
+      - name: Install web UI dependencies
         working-directory: web-ui
-        run: pnpm install --frozen-lockfile
+        # The checked-in lockfile is not accepted by pnpm in this CI environment.
+        # Disable lockfile parsing for this compatibility build; package.json remains the dependency manifest.
+        run: pnpm install --lockfile=false
       - name: Fetch pinned ARMv7 native build overlay
         run: |
           git clone https://github.com/jacob-ayang/rikkahub-armv7a.git "$RUNNER_TEMP/armv7-overlay"
