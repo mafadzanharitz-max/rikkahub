@@ -51,11 +51,11 @@ replace_once(
 
 replace_once(
     updater,
-    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")) {
+    """if (!url.startsWith("https://github.com/mafadzanharitz-max/rikkahub/releases/download/")) {
                     return@firstNotNullOfOrNull null
                 }""",
-    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/") ||
-                    !checksumUrl.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")
+    """if (!url.startsWith("https://github.com/mafadzanharitz-max/rikkahub/releases/download/") ||
+                    !checksumUrl.startsWith("https://github.com/mafadzanharitz-max/rikkahub/releases/download/")
                 ) {
                     return@firstNotNullOfOrNull null
                 }""",
@@ -90,7 +90,7 @@ test = root / "app/src/test/java/me/rerere/rikkahub/utils/Armv7UpdatesTest.kt"
 replace_once(
     test,
     """{"name":"SHA256SUMS"},{"name":"build-info.json"}$assets]}""",
-    """{"name":"SHA256SUMS","browser_download_url":"https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/$tag/SHA256SUMS"},{"name":"build-info.json"}$assets]}""",
+    """{"name":"SHA256SUMS","browser_download_url":"https://github.com/mafadzanharitz-max/rikkahub/releases/download/$tag/SHA256SUMS"},{"name":"build-info.json"}$assets]}""",
 )
 replace_once(
     test,
