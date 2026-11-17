@@ -99,24 +99,58 @@ jobs:
           JSON
       - name: Build checksum-locked ARMv7 native components
         run: python3 scripts/ci/build-native.py
-      - name: Create temporary CI-only release signing key
+      - name: Configure permanent release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/rikkahub-ci-release.jks"
-          STORE_PASSWORD="$(openssl rand -hex 24)"
-          keytool -genkeypair -noprompt \
-            -keystore "$KEYSTORE" \
-            -storepass "$STORE_PASSWORD" \
-            -keypass "$STORE_PASSWORD" \
-            -alias ci-release \
-            -dname "CN=RikkaHub CI Temporary,O=CI,C=US" \
-            -keyalg RSA -keysize 2048 -validity 2
-          {
-            echo "storeFile=$KEYSTORE"
-            echo "storePassword=$STORE_PASSWORD"
-            echo "keyAlias=ci-release"
-            echo "keyPassword=$STORE_PASSWORD"
-          } > local.properties
+          : "${RELEASE_KEYSTORE_BASE64:?Missing RELEASE_KEYSTORE_BASE64 secret}"
+          : "${RELEASE_KEYSTORE_PASSWORD:?Missing RELEASE_KEYSTORE_PASSWORD secret}"
+          : "${RELEASE_KEY_ALIAS:?Missing RELEASE_KEY_ALIAS secret}"
+          : "${RELEASE_KEY_PASSWORD:?Missing RELEASE_KEY_PASSWORD secret}"
+
+          KEYSTORE="$RUNNER_TEMP/rikkahub-release.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+
+          # Confirm the keystore password and alias before Gradle starts.
+          keytool -list -keystore "$KEYSTORE" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+
+          # Write Java-properties-safe values without printing credentials.
+          export KEYSTORE
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          def escape(value):
+              if any(ch in value for ch in "\\r\\n\\t\\f"):
+                  raise SystemExit("Signing values must not contain line breaks or tabs")
+              out = []
+              for i, ch in enumerate(value):
+                  if ch == "\\\\":
+                      out.append("\\\\\\\\")
+                  elif ch in "=:#!" or (ch == " " and i == 0):
+                      out.append("\\\\" + ch)
+                  else:
+                      out.append(ch)
+              return "".join(out)
+
+          values = {
+              "storeFile": os.environ["KEYSTORE"],
+              "storePassword": os.environ["RELEASE_KEYSTORE_PASSWORD"],
+              "keyAlias": os.environ["RELEASE_KEY_ALIAS"],
+              "keyPassword": os.environ["RELEASE_KEY_PASSWORD"],
+          }
+          Path("local.properties").write_text(
+              "".join(f"{key}={escape(value)}\\n" for key, value in values.items()),
+              encoding="utf-8",
+          )
+          PY
       - name: Compile, test, and build Debug plus optimized Release
         run: |
           ./gradlew :app:assembleGithubDebug :app:testGithubDebugUnitTest \
@@ -252,3 +286,4 @@ jobs:
         run: |
           rm -f app/google-services.json local.properties
           rm -f "$RUNNER_TEMP/rikkahub-ci-release.jks"
+          rm -f "$RUNNER_TEMP/rikkahub-release.jks"
