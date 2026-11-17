@@ -128,14 +128,14 @@ jobs:
           from pathlib import Path
 
           def escape(value):
-              if any(ch in value for ch in "\\r\\n\\t\\f"):
+              if any(ch in value for ch in "\r\n\t\f"):
                   raise SystemExit("Signing values must not contain line breaks or tabs")
               out = []
               for i, ch in enumerate(value):
-                  if ch == "\\\\":
-                      out.append("\\\\\\\\")
+                  if ch == "\\":
+                      out.append("\\\\")
                   elif ch in "=:#!" or (ch == " " and i == 0):
-                      out.append("\\\\" + ch)
+                      out.append("\\" + ch)
                   else:
                       out.append(ch)
               return "".join(out)
@@ -147,7 +147,7 @@ jobs:
               "keyPassword": os.environ["RELEASE_KEY_PASSWORD"],
           }
           Path("local.properties").write_text(
-              "".join(f"{key}={escape(value)}\\n" for key, value in values.items()),
+              "".join(f"{key}={escape(value)}\n" for key, value in values.items()),
               encoding="utf-8",
           )
           PY
