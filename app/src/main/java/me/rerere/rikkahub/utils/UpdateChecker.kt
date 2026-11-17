@@ -61,12 +61,10 @@ class UpdateChecker(
                             )
                             .build()
                     ).await()
-                    response.use {
-                        if (it.isSuccessful) {
-                            json.decodeFromString<UpdateInfo>(it.body.string())
-                        } else {
-                            throw Exception("Failed to fetch update info (HTTP ${it.code})")
-                        }
+                    if (response.isSuccessful) {
+                        json.decodeFromString<UpdateInfo>(response.body.string())
+                    } else {
+                        throw Exception("Failed to fetch update info")
                     }
                 } catch (e: Exception) {
                     throw Exception("Failed to fetch update info", e)
