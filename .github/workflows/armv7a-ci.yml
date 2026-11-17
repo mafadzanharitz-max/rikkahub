@@ -116,10 +116,41 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           test -s "$KEYSTORE"
 
-          # Confirm the keystore password and alias before Gradle starts.
-          keytool -list -keystore "$KEYSTORE" \
+          # Validate each credential separately without printing any secret.
+          if ! keytool -list -keystore "$KEYSTORE" \
+            -storepass "$RELEASE_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::Keystore could not be opened. Check RELEASE_KEYSTORE_BASE64 and RELEASE_KEYSTORE_PASSWORD."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE" \
             -storepass "$RELEASE_KEYSTORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::Keystore opened, but RELEASE_KEY_ALIAS was not found."
+            exit 1
+          fi
+
+          # Verify that the private-key password unlocks the selected key.
+          export KEYSTORE
+          if ! jshell --execution local <<'JAVA' >/dev/null 2>&1
+          import java.io.*;
+          import java.nio.file.*;
+          import java.security.*;
+          import java.security.PrivateKey;
+          char[] storePass = System.getenv("RELEASE_KEYSTORE_PASSWORD").toCharArray();
+          char[] keyPass = System.getenv("RELEASE_KEY_PASSWORD").toCharArray();
+          KeyStore ks = KeyStore.getInstance("PKCS12");
+          try (InputStream in = Files.newInputStream(Path.of(System.getenv("KEYSTORE")))) {
+              ks.load(in, storePass);
+          }
+          String alias = System.getenv("RELEASE_KEY_ALIAS");
+          if (!(ks.getKey(alias, keyPass) instanceof PrivateKey)) throw new Exception("Private key unavailable");
+          System.out.println("Private key password validated");
+          /exit
+          JAVA
+          then
+            echo "::error::Keystore and alias are valid, but RELEASE_KEY_PASSWORD does not unlock the private key."
+            exit 1
+          fi
 
           # Write Java-properties-safe values without printing credentials.
           export KEYSTORE
