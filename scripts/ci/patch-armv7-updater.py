@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch the pinned ARMv7 overlay so an empty fork release list means no update."""
+"""Patch the pinned ARMv7 overlay: empty feed handling and SHA-256-locked updates."""
 
 from pathlib import Path
 
@@ -14,6 +14,7 @@ def replace_once(path: Path, old: str, new: str) -> None:
 
 root = Path(".")
 updater = root / "app/src/main/java/me/rerere/rikkahub/utils/Armv7Updates.kt"
+
 replace_once(
     updater,
     """return releases.mapNotNull { it as? JsonObject }
@@ -31,7 +32,66 @@ replace_once(
             .filter { !it.flag("draft") && !it.flag("prerelease") }""",
 )
 
+replace_once(
+    updater,
+    """if (files.none { it.text("name") == "SHA256SUMS" } ||
+                    files.none { it.text("name") == "build-info.json" }
+                ) return@firstNotNullOfOrNull null
+                val url = apk.text("browser_download_url")""",
+    """val checksumAsset = files.singleOrNull { it.text("name") == "SHA256SUMS" }
+                    ?: return@firstNotNullOfOrNull null
+                val buildInfo = files.singleOrNull { it.text("name") == "build-info.json" }
+                    ?: return@firstNotNullOfOrNull null
+                val checksumUrl = checksumAsset.text("browser_download_url")
+                if (checksumUrl.isBlank() || buildInfo.text("name") != "build-info.json") {
+                    return@firstNotNullOfOrNull null
+                }
+                val url = apk.text("browser_download_url")""",
+)
+
+replace_once(
+    updater,
+    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")) {
+                    return@firstNotNullOfOrNull null
+                }""",
+    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/") ||
+                    !checksumUrl.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")
+                ) {
+                    return@firstNotNullOfOrNull null
+                }""",
+)
+
+replace_once(
+    updater,
+    """                            size = "${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
+                        )""",
+    """                            size = "${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
+                            checksumUrl = checksumUrl,
+                        )""",
+)
+
+replace_once(
+    updater,
+    """    private fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()""",
+    """    fun expectedSha256(checksums: String, fileName: String): String {
+        val matches = checksums.lineSequence().mapNotNull { line ->
+            val match = Regex("^([0-9a-fA-F]{64})\\\\s+\\\\*?(.+?)\\\\s*$")
+                .matchEntire(line.trim()) ?: return@mapNotNull null
+            match.groupValues[1].lowercase().takeIf { match.groupValues[2] == fileName }
+        }.toList()
+        require(matches.size == 1) { "Missing or ambiguous SHA-256 entry for $fileName" }
+        return matches.single()
+    }
+
+    private fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()""",
+)
+
 test = root / "app/src/test/java/me/rerere/rikkahub/utils/Armv7UpdatesTest.kt"
+replace_once(
+    test,
+    """{"name":"SHA256SUMS"},{"name":"build-info.json"}$assets]}""",
+    """{"name":"SHA256SUMS","browser_download_url":"https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/$tag/SHA256SUMS"},{"name":"build-info.json"}$assets]}""",
+)
 replace_once(
     test,
     """    @Test fun selectsOnlyCompatibleFormalRelease() {""",
@@ -51,6 +111,10 @@ replace_once(
             "https://github.com/mafadzanharitz-max/rikkahub/releases/download/3.2.0/app.apk",
             info.downloads.single().url,
         )
+        assertEquals(
+            "https://github.com/mafadzanharitz-max/rikkahub/releases/download/3.2.0/SHA256SUMS",
+            info.downloads.single().checksumUrl,
+        )
     }
 
     @Test fun skipsIncompleteNewestReleaseAndUsesOlderCompleteRelease() {
@@ -59,6 +123,24 @@ replace_once(
         assertEquals("3.1.0", info.version)
     }
 
+    @Test fun parsesOnlyTheExactSha256Filename() {
+        val expected = "a".repeat(64)
+        assertEquals(expected, Armv7Updates.expectedSha256("$expected  app.apk", "app.apk"))
+    }
+
+    @Test fun rejectsMissingAmbiguousAndMalformedChecksums() {
+        val valid = "b".repeat(64)
+        assertThrows(IllegalArgumentException::class.java) {
+            Armv7Updates.expectedSha256("$valid  other.apk", "app.apk")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            Armv7Updates.expectedSha256("$valid  app.apk\\n$valid *app.apk", "app.apk")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            Armv7Updates.expectedSha256("not-a-hash  app.apk", "app.apk")
+        }
+    }
+
     @Test fun selectsOnlyCompatibleFormalRelease() {""",
 )
-print("Patched ARMv7 updater: an empty fork release list is a clean no-update state.")
+print("Patched ARMv7 updater: empty-feed handling and exact-file SHA-256 verification metadata.")

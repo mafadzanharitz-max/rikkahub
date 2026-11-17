@@ -1,10 +1,12 @@
 package me.rerere.rikkahub.utils
 
-import android.app.DownloadManager
 import android.content.Context
-import android.os.Environment
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
-import androidx.core.net.toUri
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,6 +15,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.common.http.await
@@ -20,12 +24,19 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.UUID
 
 private const val API_URL = "https://updates.rikka-ai.com/"
+private const val RELEASE_ASSET_PREFIX =
+    "https://github.com/mafadzanharitz-max/rikkahub/releases/download/"
+private const val MAX_APK_BYTES = 300L * 1024L * 1024L
 
 class UpdateChecker(
     private val client: OkHttpClient,
-    appScope: AppScope,
+    private val appScope: AppScope,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -50,10 +61,12 @@ class UpdateChecker(
                             )
                             .build()
                     ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
+                    response.use {
+                        if (it.isSuccessful) {
+                            json.decodeFromString<UpdateInfo>(it.body.string())
+                        } else {
+                            throw Exception("Failed to fetch update info (HTTP ${it.code})")
+                        }
                     }
                 } catch (e: Exception) {
                     throw Exception("Failed to fetch update info", e)
@@ -65,27 +78,99 @@ class UpdateChecker(
     }.flowOn(Dispatchers.IO)
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
-        runCatching {
-            val request = DownloadManager.Request(download.url.toUri()).apply {
-                // 设置下载时通知栏的标题和描述
-                setTitle(download.name)
-                setDescription("正在下载更新包...")
-                // 下载完成后通知栏可见
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // 允许在移动网络和WiFi下下载
-                setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
-                // 设置文件保存路径
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, download.name)
-                // 允许下载的文件类型
-                setMimeType("application/vnd.android.package-archive")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !context.packageManager.canRequestPackageInstalls()
+        ) {
+            runCatching {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${context.packageName}"),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }.onFailure {
+                Toast.makeText(context, "Allow installs from this app in Android settings.", Toast.LENGTH_LONG).show()
             }
-            // 获取系统的DownloadManager
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(request)
-            // 你可以保存返回的downloadId到本地，以便后续查询下载进度或状态
-        }.onFailure {
-            Toast.makeText(context, "Failed to update", Toast.LENGTH_SHORT).show()
-            context.openUrl(download.url) // 跳转到下载页面
+            return
+        }
+
+        appScope.launch {
+            var temporaryFile: File? = null
+            try {
+                val verifiedApk = withContext(Dispatchers.IO) {
+                    require(download.name.matches(Regex("rikkahub-.+-armv7a-[0-9a-f]{7,40}\\.apk"))) {
+                        "Unexpected APK filename"
+                    }
+                    require(download.url.startsWith(RELEASE_ASSET_PREFIX)) { "Untrusted APK download URL" }
+                    require(download.checksumUrl.startsWith(RELEASE_ASSET_PREFIX)) {
+                        "Untrusted checksum URL"
+                    }
+
+                    val checksumRequest = Request.Builder().url(download.checksumUrl).get().build()
+                    val checksumResponse = client.newCall(checksumRequest).execute()
+                    val checksumText = checksumResponse.use {
+                        check(it.isSuccessful) { "Checksum download failed (HTTP ${it.code})" }
+                        val body = it.body
+                        check(body.contentLength() in 0..(1024L * 1024L)) { "Invalid checksum file size" }
+                        body.string()
+                    }
+                    val expectedHash = Armv7Updates.expectedSha256(checksumText, download.name)
+
+                    val partFile = File(context.cacheDir, "update-${UUID.randomUUID()}.apk.part")
+                    temporaryFile = partFile
+                    val apkRequest = Request.Builder().url(download.url).get().build()
+                    val apkResponse = client.newCall(apkRequest).execute()
+                    apkResponse.use { response ->
+                        check(response.isSuccessful) { "APK download failed (HTTP ${response.code})" }
+                        val body = response.body
+                        check(body.contentLength() in 1..MAX_APK_BYTES) { "Invalid APK size" }
+                        val digest = MessageDigest.getInstance("SHA-256")
+                        var totalBytes = 0L
+                        body.byteStream().use { input ->
+                            FileOutputStream(partFile).use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    totalBytes += count
+                                    check(totalBytes <= MAX_APK_BYTES) { "APK exceeds size limit" }
+                                    digest.update(buffer, 0, count)
+                                    output.write(buffer, 0, count)
+                                }
+                                output.fd.sync()
+                            }
+                        }
+                        check(totalBytes > 0L) { "Downloaded APK is empty" }
+                        val actualHash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                        check(actualHash.equals(expectedHash, ignoreCase = true)) {
+                            "SHA-256 verification failed; APK was not installed"
+                        }
+                    }
+
+                    val verifiedFile = File(context.cacheDir, "verified-${UUID.randomUUID()}.apk")
+                    check(partFile.renameTo(verifiedFile)) { "Could not finalize verified APK" }
+                    temporaryFile = null
+                    verifiedFile
+                }
+
+                val contentUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    verifiedApk,
+                )
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(contentUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(installIntent)
+            } catch (error: Exception) {
+                temporaryFile?.delete()
+                Toast.makeText(
+                    context,
+                    "Update verification/download failed: ${error.message ?: "unknown error"}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
         }
     }
 }
@@ -94,7 +179,8 @@ class UpdateChecker(
 data class UpdateDownload(
     val name: String,
     val url: String,
-    val size: String
+    val size: String,
+    val checksumUrl: String,
 )
 
 @Serializable
