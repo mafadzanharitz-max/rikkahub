@@ -63,9 +63,9 @@ replace_once(
 
 replace_once(
     updater,
-    """                            size = "\${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
+    """                            size = "${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
                         )""",
-    """                            size = "\${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
+    """                            size = "${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
                             checksumUrl = checksumUrl,
                         )""",
 )
@@ -102,7 +102,7 @@ replace_once(
     }
 
     @Test fun selectsNewestCompleteArmv7ReleaseAndItsExactAsset() {
-        val info = Armv7Updates.decode("[\${release("3.2.0")},\${release("3.1.0")}]")
+        val info = Armv7Updates.decode("[${release("3.2.0")},${release("3.1.0")}]")
         assertEquals("3.2.0", info.version)
         assertEquals("2026-10-24T12:00:00Z", info.publishedAt)
         assertEquals(1, info.downloads.size)
@@ -119,7 +119,7 @@ replace_once(
 
     @Test fun skipsIncompleteNewestReleaseAndUsesOlderCompleteRelease() {
         val incomplete = release("3.2.0").replace("SHA256SUMS", "missing-checksums.txt")
-        val info = Armv7Updates.decode("[\${incomplete},\${release("3.1.0")}]")
+        val info = Armv7Updates.decode("[${incomplete},${release("3.1.0")}]")
         assertEquals("3.1.0", info.version)
     }
 
