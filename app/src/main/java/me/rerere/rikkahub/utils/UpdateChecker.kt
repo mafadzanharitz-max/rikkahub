@@ -7,7 +7,6 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -142,7 +141,7 @@ class UpdateChecker(
                             }
                         }
                         check(totalBytes > 0L) { "Downloaded APK is empty" }
-                        val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+                        val actualHash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
                         check(actualHash.equals(expectedHash, ignoreCase = true)) {
                             "SHA-256 verification failed; APK was not installed"
                         }
