@@ -51,6 +51,18 @@ replace_once(
 
 replace_once(
     updater,
+    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")) {
+                    return@firstNotNullOfOrNull null
+                }""",
+    """if (!url.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/") ||
+                    !checksumUrl.startsWith("https://github.com/jacob-ayang/rikkahub-armv7a/releases/download/")
+                ) {
+                    return@firstNotNullOfOrNull null
+                }""",
+)
+
+replace_once(
+    updater,
     """                            size = "\${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
                         )""",
     """                            size = "\${apk["size"]!!.jsonPrimitive.longOrNull!! / 1024 / 1024} MB",
