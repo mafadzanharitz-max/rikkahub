@@ -20,6 +20,15 @@ sealed class McpStatus {
                     ?: throwable.javaClass.simpleName
                 return Error(message = summary, detail = throwable.stackTraceToString())
             }
+
+            /** Remote MCP errors may echo tokens, authorization headers, or sensitive URLs. */
+            fun fromRemote(throwable: Throwable): Error {
+                val type = throwable.javaClass.simpleName.ifBlank { "UnknownError" }
+                return Error(
+                    message = "Remote MCP operation failed ($type)",
+                    detail = "Remote MCP operation failed ($type). Server-provided details were withheld for security.",
+                )
+            }
         }
     }
 
