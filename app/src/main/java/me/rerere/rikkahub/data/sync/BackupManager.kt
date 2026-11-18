@@ -439,6 +439,15 @@ class BackupManager(
 
         /** Must finish before Koin, Room, SettingsStore or any background consumers are initialized. */
         suspend fun applyPendingRestore(context: Context, json: Json): Boolean = withContext(Dispatchers.IO) {
+            // A process can be killed while decrypting a backup. On the next cold start,
+            // remove abandoned plaintext archives before backup/sync components are initialized.
+            context.cacheDir.listFiles { file ->
+                file.isFile && file.name.startsWith("restore_plain_") && file.name.endsWith(".zip")
+            }?.forEach { staleArchive ->
+                if (!staleArchive.delete() && staleArchive.exists()) {
+                    Log.w(TAG, "Could not remove abandoned decrypted restore archive")
+                }
+            }
             pendingRestore(context).apply { settingsJson ->
                 SettingsStore.restoreBeforeInitialization(
                     context = context,
