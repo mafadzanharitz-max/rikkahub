@@ -388,7 +388,7 @@ fun ImportExportTab(
                     onClick = {
                         showImportConfirmDialog = false
                         importType = "local"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
+                        passwordDialogPurpose = "import"
                     }
                 ) {
                     Text(stringResource(R.string.confirm))
