@@ -54,11 +54,10 @@ class BackupManager(
     suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean, password: String): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val archive = File.createTempFile("backup_${timestamp}_", ".rkhb", context.cacheDir)
-        val plaintextArchive = File.createTempFile("backup_plain_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.awaitLoaded()
-            ZipOutputStream(FileOutputStream(plaintextArchive)).use { zip ->
+            ZipOutputStream(encryptedOutputStream(archive, password)).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
@@ -86,13 +85,11 @@ class BackupManager(
                     }
                 }
             }
-            encryptArchive(plaintextArchive, archive, password)
             archive
         } catch (e: Throwable) {
             archive.delete()
             throw e
         } finally {
-            plaintextArchive.delete()
             staging.deleteRecursively()
         }
     }
@@ -231,22 +228,19 @@ class BackupManager(
             }
         }
 
-        private fun encryptArchive(source: File, target: File, password: String) {
+        private fun encryptedOutputStream(target: File, password: String): CipherOutputStream {
             val salt = ByteArray(BACKUP_SALT_BYTES).also(SecureRandom()::nextBytes)
             val iv = ByteArray(BACKUP_IV_BYTES).also(SecureRandom()::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
                 init(Cipher.ENCRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
                 updateAAD(BACKUP_MAGIC + byteArrayOf(BACKUP_VERSION.toByte()))
             }
-            DataOutputStream(target.outputStream().buffered()).use { output ->
-                output.write(BACKUP_MAGIC)
-                output.writeByte(BACKUP_VERSION)
-                output.write(salt)
-                output.write(iv)
-                CipherOutputStream(output, cipher).use { encrypted ->
-                    source.inputStream().buffered().use { it.copyTo(encrypted) }
-                }
-            }
+            val output = DataOutputStream(target.outputStream().buffered())
+            output.write(BACKUP_MAGIC)
+            output.writeByte(BACKUP_VERSION)
+            output.write(salt)
+            output.write(iv)
+            return CipherOutputStream(output, cipher)
         }
 
         private fun decryptArchive(source: File, target: File, password: String) {
