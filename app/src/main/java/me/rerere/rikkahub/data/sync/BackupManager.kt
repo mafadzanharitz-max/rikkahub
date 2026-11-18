@@ -258,8 +258,8 @@ class BackupManager(
 
         /**
          * SSH credentials use a device-bound Android Keystore key in the live database.
-         * Convert them to plaintext only inside the temporary database snapshot, which is
-         * immediately streamed into the password-encrypted archive; re-encrypt on restore.
+         * The snapshot uses per-secret encryption derived from the backup passphrase, then
+         * restore rebinds those secrets to the destination device's Android Keystore.
          */
         private fun rewriteSshCredentials(databaseFile: File, forPortableBackup: Boolean, password: String?) {
             val db = android.database.sqlite.SQLiteDatabase.openDatabase(
