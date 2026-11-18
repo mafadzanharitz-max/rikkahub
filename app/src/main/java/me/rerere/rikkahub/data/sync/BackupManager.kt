@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
+import android.content.ContentValues
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -23,6 +24,9 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.SQLiteConfiguration
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.MediaCreationFiles
+import me.rerere.rikkahub.data.model.SshWorkspaceSettings
+import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.SecretCipher
 import java.io.File
 import java.io.FileOutputStream
 import java.io.DataInputStream
@@ -82,6 +86,7 @@ class BackupManager(
                 if (includeDatabase) {
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
                     DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, snapshot)
+                    rewriteSshCredentials(snapshot, forPortableBackup = true)
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
@@ -166,6 +171,7 @@ class BackupManager(
                     require(!stagedWal.exists() || stagedDatabase.exists()) { "Backup WAL has no matching database" }
                     if (stagedDatabase.exists()) {
                         DatabaseBackup.normalize(context, stagedDatabase)
+                        rewriteSshCredentials(stagedDatabase, forPortableBackup = false)
                         // Reject unsupported schemas before publishing; run supported old migrations on the copy.
                         val room = AppDatabaseFactory.create(context, stagedDatabase.absolutePath)
                         try {
@@ -225,6 +231,77 @@ class BackupManager(
         private const val BACKUP_SALT_BYTES = 16
         private const val BACKUP_IV_BYTES = 12
         private const val BACKUP_TAG_BITS = 128
+
+        /**
+         * SSH credentials use a device-bound Android Keystore key in the live database.
+         * Convert them to plaintext only inside the temporary database snapshot, which is
+         * immediately streamed into the password-encrypted archive; re-encrypt on restore.
+         */
+        private fun rewriteSshCredentials(databaseFile: File, forPortableBackup: Boolean) {
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                databaseFile.absolutePath,
+                null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
+            )
+            try {
+                val hasTable = db.rawQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspaces'",
+                    null,
+                ).use { it.moveToFirst() }
+                if (!hasTable) return
+
+                val hasColumn = db.rawQuery("PRAGMA table_info(workspaces)", null).use { cursor ->
+                    val nameIndex = cursor.getColumnIndexOrThrow("name")
+                    var found = false
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(nameIndex) == "ssh_config") found = true
+                    }
+                    found
+                }
+                if (!hasColumn) return
+
+                val rows = mutableListOf<Pair<String, String>>()
+                db.rawQuery("SELECT id, ssh_config FROM workspaces WHERE ssh_config IS NOT NULL", null).use { cursor ->
+                    while (cursor.moveToNext()) rows += cursor.getString(0) to cursor.getString(1)
+                }
+                if (rows.isEmpty()) return
+
+                db.beginTransaction()
+                try {
+                    rows.forEach { (id, rawConfig) ->
+                        val settings = JsonInstant.decodeFromString<SshWorkspaceSettings>(rawConfig)
+                        fun transform(secret: String?): String? = secret?.let { value ->
+                            if (forPortableBackup) {
+                                if (value.startsWith("v1:")) SecretCipher.decrypt(value) else value
+                            } else {
+                                if (value.startsWith("v1:")) value else SecretCipher.encrypt(value)
+                            }
+                        }
+                        val portable = settings.copy(
+                            encryptedPassword = transform(settings.encryptedPassword),
+                            encryptedPrivateKey = transform(settings.encryptedPrivateKey),
+                            encryptedPassphrase = transform(settings.encryptedPassphrase),
+                            jumpHost = settings.jumpHost?.copy(
+                                encryptedPassword = transform(settings.jumpHost.encryptedPassword),
+                                encryptedPrivateKey = transform(settings.jumpHost.encryptedPrivateKey),
+                                encryptedPassphrase = transform(settings.jumpHost.encryptedPassphrase),
+                            ),
+                        )
+                        val values = ContentValues().apply {
+                            put("ssh_config", JsonInstant.encodeToString(portable))
+                        }
+                        check(db.update("workspaces", values, "id = ?", arrayOf(id)) == 1) {
+                            "Could not prepare SSH credentials for portable backup"
+                        }
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            } finally {
+                db.close()
+            }
+        }
 
         private fun isEncryptedArchive(file: File): Boolean {
             if (file.length() < BACKUP_MAGIC.size) return false
