@@ -235,7 +235,21 @@ val dataSourceModule = module {
             .addNetworkInterceptor(RequestLoggingInterceptor())
             .addInterceptor(AIRequestInterceptor())
             .addInterceptor(HttpLoggingInterceptor().apply {
-                redactHeader("Proxy-Authorization")
+                listOf(
+                    "Authorization",
+                    "Proxy-Authorization",
+                    "X-Api-Key",
+                    "Api-Key",
+                    "X-Goog-Api-Key",
+                    "X-Auth-Token",
+                    "X-Api-Token",
+                    "X-Access-Token",
+                    "X-Refresh-Token",
+                    "X-Csrf-Token",
+                    "Cookie",
+                    "Set-Cookie",
+                    "X-Amz-Security-Token",
+                ).forEach(::redactHeader)
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
             .build()
