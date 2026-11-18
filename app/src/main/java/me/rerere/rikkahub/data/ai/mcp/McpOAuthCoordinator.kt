@@ -114,11 +114,11 @@ internal class McpOAuthCoordinator(
                     expiresAt = computeExpiry(token.expiresIn),
                     scope = token.scope ?: oauth.scope,
                 )
-                persistOAuthState(config.id, updated)
-                config.clone(commonOptions = config.commonOptions.copy(oauth = updated))
+                persistRefreshedOAuthState(config, updated)
             }.getOrElse {
                 Log.w(TAG, "Token refresh failed for ${config.commonOptions.name}: ${it.message}")
-                config
+                settingsStore.settingsFlow.value.mcpServers.find { server -> server.id == config.id }
+                    ?: config
             }
         }
     }
@@ -312,6 +312,36 @@ internal class McpOAuthCoordinator(
             right.commonOptions.enable &&
             left.commonOptions.headers.filter { it.first.isNotBlank() } ==
             right.commonOptions.headers.filter { it.first.isNotBlank() }
+
+    /**
+     * A refresh request can outlive a settings change. Persist the returned token only when
+     * the server is still enabled, still targets the same endpoint/headers, and still carries
+     * the exact OAuth state used for the request. This prevents a late refresh from restoring
+     * credentials after the user disabled or reconfigured OAuth.
+     */
+    private suspend fun persistRefreshedOAuthState(
+        expected: McpServerConfig,
+        oauth: McpOAuthState,
+    ): McpServerConfig {
+        settingsStore.update { old ->
+            val current = old.mcpServers.find { it.id == expected.id }
+                ?: error("MCP server was removed during token refresh")
+            check(sameAuthorizationTarget(expected, current)) {
+                "MCP server configuration changed during token refresh"
+            }
+            check(current.commonOptions.oauth == expected.commonOptions.oauth) {
+                "MCP OAuth settings changed during token refresh"
+            }
+            old.copy(
+                mcpServers = old.mcpServers.map { server ->
+                    if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
+                    else server
+                }
+            )
+        }
+        return settingsStore.settingsFlow.value.mcpServers.find { it.id == expected.id }
+            ?: error("MCP server was removed after token refresh")
+    }
 
     private suspend fun persistOAuthState(configId: Uuid, oauth: McpOAuthState?) {
         settingsStore.update { old ->
