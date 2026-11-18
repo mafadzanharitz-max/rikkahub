@@ -42,6 +42,23 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
+/**
+ * Backup transports carry account credentials. Require TLS for remote endpoints while
+ * retaining loopback HTTP for local development/self-hosted services on the same device.
+ */
+internal fun requireSecureBackupEndpoint(rawEndpoint: String) {
+    require(rawEndpoint.isNotBlank()) { "Backup server address is required" }
+    val normalized = if ("://" in rawEndpoint) rawEndpoint else "https://$rawEndpoint"
+    val uri = java.net.URI(normalized)
+    val scheme = uri.scheme?.lowercase()
+    val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.lowercase()
+    require(!host.isNullOrBlank()) { "Invalid backup server address" }
+    val isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+    require(scheme == "https" || (scheme == "http" && isLoopback)) {
+        "Remote backup servers must use HTTPS. HTTP is allowed only for localhost."
+    }
+}
+
 /** Shared archive format and restore lifecycle for local, WebDAV and S3 backups. */
 class BackupManager(
     private val context: Context,
