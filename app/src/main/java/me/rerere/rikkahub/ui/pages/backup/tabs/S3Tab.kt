@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -9,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.launch
@@ -38,6 +42,9 @@ fun S3Tab(
     var showBackupFiles by remember { mutableStateOf(false) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
     var isBackingUp by remember { mutableStateOf(false) }
+    var passwordDialogPurpose by remember { mutableStateOf<String?>(null) }
+    var backupPassword by remember { mutableStateOf("") }
+    var pendingRestoreItem by remember { mutableStateOf<S3BackupItem?>(null) }
 
     fun updateS3Config(newConfig: S3Config) {
         vm.updateSettings { it.copy(s3Config = newConfig) }
@@ -65,27 +72,8 @@ fun S3Tab(
                 }
             }
         },
-        onBackup = {
-            scope.launch {
-                isBackingUp = true
-                runCatching {
-                    vm.backupToS3()
-                    vm.loadS3BackupFileItems()
-                    toaster.show(
-                        context.getString(R.string.backup_page_backup_success),
-                        type = ToastType.Success
-                    )
-                }.onFailure {
-                    it.printStackTrace()
-                    toaster.show(
-                        it.message ?: context.getString(R.string.backup_page_unknown_error),
-                        type = ToastType.Error
-                    )
-                }
-                isBackingUp = false
-            }
-        },
-    ) {
+        onBackup = { passwordDialogPurpose = "backup" },
+
         RemoteBackupStatus(
             lastBackupTime = settings.backupReminderConfig.lastBackupTime,
             filesState = backupItemsState,
@@ -141,30 +129,73 @@ fun S3Tab(
                 }
             },
             onRestore = { item ->
-                scope.launch {
-                    restoringItemId = item.displayName
-                    runCatching {
-                        vm.restoreFromS3(item = item)
-                        toaster.show(
-                            context.getString(R.string.backup_page_restore_success),
-                            type = ToastType.Success
-                        )
-                        showBackupFiles = false
-                        onShowRestartDialog()
-                    }.onFailure { err ->
-                        err.printStackTrace()
-                        toaster.show(
-                            context.getString(
-                                R.string.backup_page_restore_failed,
-                                err.message ?: ""
-                            ),
-                            type = ToastType.Error
-                        )
-                    }
-                    restoringItemId = null
-                }
+                pendingRestoreItem = item
+                passwordDialogPurpose = "restore"
             },
             onDismiss = { showBackupFiles = false },
         )
     }
+    if (passwordDialogPurpose != null) {
+        AlertDialog(
+            onDismissRequest = { passwordDialogPurpose = null; backupPassword = ""; pendingRestoreItem = null },
+            title = { Text(if (passwordDialogPurpose == "backup") "Encrypt backup" else "Unlock backup") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    Text("Use at least 10 characters. RikkaHub does not store this password. You will need it to restore the archive.")
+                    OutlinedTextField(
+                        value = backupPassword,
+                        onValueChange = { backupPassword = it },
+                        label = { Text("Backup password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = backupPassword.length >= 10,
+                    onClick = {
+                        val password = backupPassword
+                        val purpose = passwordDialogPurpose
+                        passwordDialogPurpose = null
+                        backupPassword = ""
+                        if (purpose == "backup") {
+                            scope.launch {
+                                isBackingUp = true
+                                runCatching {
+                                    vm.backupToS3(backupPassword)
+                                    vm.loadS3BackupFileItems()
+                                    toaster.show(context.getString(R.string.backup_page_backup_success), type = ToastType.Success)
+                                }.onFailure { err ->
+                                    toaster.show(err.message ?: context.getString(R.string.backup_page_unknown_error), type = ToastType.Error)
+                                }
+                                isBackingUp = false
+                            }
+                        } else {
+                            val item = pendingRestoreItem
+                            pendingRestoreItem = null
+                            if (item != null) scope.launch {
+                                restoringItemId = item.displayName
+                                runCatching {
+                                    vm.restoreFromS3(item = item, password = backupPassword)
+                                    toaster.show(context.getString(R.string.backup_page_restore_success), type = ToastType.Success)
+                                    showBackupFiles = false
+                                    onShowRestartDialog()
+                                }.onFailure { err ->
+                                    toaster.show(context.getString(R.string.backup_page_restore_failed, err.message ?: ""), type = ToastType.Error)
+                                }
+                                restoringItemId = null
+                            }
+                        }
+                    }
+                ) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { passwordDialogPurpose = null; backupPassword = ""; pendingRestoreItem = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
 }
