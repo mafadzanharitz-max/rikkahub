@@ -59,12 +59,19 @@ class RequestLoggingInterceptor : Interceptor {
 
     private fun Headers.redactedMap(): Map<String, String> {
         return names().associateWith { name ->
-            if (name.lowercase() in SENSITIVE_HEADERS) {
+            if (isSensitiveHeader(name)) {
                 REDACTED
             } else {
                 get(name) ?: ""
             }
         }
+    }
+
+    private fun isSensitiveHeader(name: String): Boolean {
+        val normalized = name.lowercase().replace('-', '_')
+        return normalized in SENSITIVE_HEADERS ||
+            SENSITIVE_HEADER_MARKERS.any(normalized::contains) ||
+            normalized.endsWith("_key")
     }
 
     private fun okhttp3.HttpUrl.redacted(): okhttp3.HttpUrl {
@@ -94,6 +101,23 @@ class RequestLoggingInterceptor : Interceptor {
             "x-refresh-token",
             "x-csrf-token",
             "x-amz-security-token",
+        )
+
+        // Custom provider headers are user-defined, so exact-name matching alone is not
+        // sufficient (for example, "anthropic-api-key" or "x-vendor-session-token").
+        val SENSITIVE_HEADER_MARKERS = listOf(
+            "authorization",
+            "api_key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+            "credential",
+            "signature",
+            "private_key",
+            "access_key",
+            "refresh_key",
+            "cookie",
         )
 
         val SENSITIVE_QUERY_PARAMETERS = setOf(
