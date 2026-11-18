@@ -67,7 +67,7 @@ fun ImportExportTab(
 
     // 创建文件保存的launcher
     val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         uri?.let { targetUri ->
             scope.launch {
@@ -271,7 +271,7 @@ fun ImportExportTab(
                 onClick = if (!isRestoring) {
                     {
                         importType = "deepseek"
-                        openDocumentLauncher.launch(arrayOf("application/zip"))
+                        openDocumentLauncher.launch(arrayOf("application/octet-stream", "application/zip"))
                     }
                 } else null,
                 headlineContent = { Text(stringResource(R.string.backup_page_import_from_deepseek)) },
@@ -359,7 +359,7 @@ fun ImportExportTab(
                         if (passwordDialogPurpose == "export") {
                             localRestorePassword = backupPassword
                             createDocumentLauncher.launch(
-                                "rikkahub_backup_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".zip"
+                                "rikkahub_backup_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".rkhb"
                             )
                         } else {
                             localRestorePassword = backupPassword
