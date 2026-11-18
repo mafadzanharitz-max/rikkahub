@@ -354,7 +354,7 @@ fun ImportExportTab(
             },
             confirmButton = {
                 TextButton(
-                    enabled = backupPassword.length >= 10,
+                    enabled = passwordDialogPurpose == "import" || passwordDialogPurpose == "restore" || backupPassword.length >= 10,
                     onClick = {
                         if (passwordDialogPurpose == "export") {
                             localRestorePassword = backupPassword
