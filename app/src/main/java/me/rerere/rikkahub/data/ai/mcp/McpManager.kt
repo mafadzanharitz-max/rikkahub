@@ -114,9 +114,14 @@ class McpManager(
             }
     }
 
-    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): List<UIMessagePart> {
+    suspend fun callTool(
+        serverId: Uuid,
+        toolName: String,
+        args: JsonObject,
+        approved: Boolean,
+    ): List<UIMessagePart> {
         val result = try {
-            sessionRegistry.callTool(serverId, toolName, args)
+            sessionRegistry.callTool(serverId, toolName, args, approved)
         } catch (e: CancellationException) {
             throw e
         } catch (e: McpClientUnavailableException) {
