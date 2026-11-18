@@ -229,7 +229,12 @@ class SettingsStore internal constructor(
         // 整份设置的 JSON 解码很重，不能放在主线程
         scope.launch(Dispatchers.Default) {
             state.value = try {
-                preferencesFlow.first().toSettings().normalized()
+                val preferences = preferencesFlow.first()
+                val loaded = preferences.toSettings().normalized()
+                // Encrypt legacy plaintext credentials before exposing the loaded settings to the app.
+                // This is an atomic DataStore edit; a failed migration must not silently downgrade security.
+                dataStore.edit { it.encryptLegacySensitiveSettings() }
+                loaded
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
