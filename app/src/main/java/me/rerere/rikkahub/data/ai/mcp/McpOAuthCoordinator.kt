@@ -85,8 +85,11 @@ internal class McpOAuthCoordinator(
     suspend fun ensureFreshToken(configInput: McpServerConfig): McpServerConfig {
         val lock = refreshLocks.computeIfAbsent(configInput.id) { Mutex() }
         return lock.withLock {
+            // Do not send a refresh token after the server has been removed or disabled
+            // while a queued tool call was waiting for this per-server lock.
             val config = settingsStore.settingsFlow.value.mcpServers.find { it.id == configInput.id }
-                ?: configInput
+                ?: return@withLock configInput
+            if (!config.commonOptions.enable) return@withLock config
             val oauth = config.commonOptions.oauth ?: return@withLock config
             if (!oauth.enabled || oauth.refreshToken.isNullOrBlank()) return@withLock config
 
