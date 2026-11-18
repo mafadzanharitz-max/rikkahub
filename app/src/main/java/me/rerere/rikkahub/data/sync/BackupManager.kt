@@ -173,7 +173,7 @@ class BackupManager(
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)
                     } finally {
-                        if (archiveToRead === decryptedArchive) decryptedArchive.delete()
+                        decryptedArchive.delete()
                     }
                 } finally {
                     staging.deleteRecursively()
