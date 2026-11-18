@@ -7,8 +7,8 @@ import me.rerere.workspace.ssh.SshHostKey
 /**
  * SSH 工作区的持久化配置, 以 JSON 存在 workspaces.ssh_config 列。
  *
- * 数据库会随备份导出, 凭据字段只存 [me.rerere.rikkahub.utils.SecretCipher] 加密后的密文;
- * 密钥在 Android Keystore 中且不可导出, 换设备恢复备份后需要重新填写凭据。
+ * 实时数据库中的凭据由 [me.rerere.rikkahub.utils.SecretCipher] 使用 Android Keystore 加密。
+ * 新版密码保护备份会在归档内临时转换为备份密码加密的可移植密文, 恢复时重新绑定到当前设备的 Keystore。
  */
 @Serializable
 data class SshWorkspaceSettings(
