@@ -492,8 +492,14 @@ internal class McpSessionRegistry(
     }
 
     private suspend fun closeClient(client: Client, serverName: String) {
-        runCatching { client.close() }
-            .onFailure { Log.w(TAG, "Failed to close MCP client $serverName", it) }
+        try {
+            client.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Close failures can contain remote transport details; never persist their messages.
+            Log.w(TAG, "Failed to close MCP client $serverName (${e.javaClass.simpleName})")
+        }
     }
 
     private fun createSdkClient(config: McpServerConfig): Client = Client(
