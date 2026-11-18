@@ -37,7 +37,7 @@ class S3Sync(
         client.putObject(
             key = key,
             file = file,
-            contentType = "application/zip"
+            contentType = "application/octet-stream"
         ).getOrThrow()
 
         Log.i(TAG, "backupToS3: Uploaded ${file.name} (${file.length().fileSizeToString()})")
@@ -54,7 +54,7 @@ class S3Sync(
         ).getOrThrow()
 
         result.objects
-            .filter { it.key.startsWith("rikkahub_backups/backup_") && it.key.endsWith(".zip") }
+            .filter { it.key.startsWith("rikkahub_backups/backup_") && (it.key.endsWith(".zip") || it.key.endsWith(".rkhb")) }
             .map { obj ->
                 S3BackupItem(
                     key = obj.key,
