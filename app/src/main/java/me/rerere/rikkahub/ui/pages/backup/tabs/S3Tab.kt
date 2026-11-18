@@ -143,7 +143,7 @@ fun S3Tab(
             title = { Text(if (passwordDialogPurpose == "backup") "Encrypt backup" else "Unlock backup") },
             text = {
                 Column {
-                    Text("Use at least 10 characters. RikkaHub does not store this password. You will need it to restore the archive.")
+                    Text("New .rkhb backups need a password of at least 10 characters. Leave blank only for older unencrypted .zip backups. RikkaHub does not store the password.")
                     OutlinedTextField(
                         value = backupPassword,
                         onValueChange = { backupPassword = it },
