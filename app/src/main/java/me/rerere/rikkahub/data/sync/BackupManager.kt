@@ -281,11 +281,13 @@ class BackupManager(
                             encryptedPassword = transform(settings.encryptedPassword),
                             encryptedPrivateKey = transform(settings.encryptedPrivateKey),
                             encryptedPassphrase = transform(settings.encryptedPassphrase),
-                            jumpHost = settings.jumpHost?.copy(
-                                encryptedPassword = transform(settings.jumpHost.encryptedPassword),
-                                encryptedPrivateKey = transform(settings.jumpHost.encryptedPrivateKey),
-                                encryptedPassphrase = transform(settings.jumpHost.encryptedPassphrase),
-                            ),
+                            jumpHost = settings.jumpHost?.let { jump ->
+                                jump.copy(
+                                    encryptedPassword = transform(jump.encryptedPassword),
+                                    encryptedPrivateKey = transform(jump.encryptedPrivateKey),
+                                    encryptedPassphrase = transform(jump.encryptedPassphrase),
+                                )
+                            },
                         )
                         val values = ContentValues().apply {
                             put("ssh_config", JsonInstant.encodeToString(portable))
