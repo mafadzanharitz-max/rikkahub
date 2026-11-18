@@ -462,7 +462,7 @@ class BackupManager(
                 file.isFile && file.name.startsWith("restore_plain_") && file.name.endsWith(".zip")
             }?.forEach { staleArchive ->
                 if (!staleArchive.delete() && staleArchive.exists()) {
-                    Log.w(TAG, "Could not remove abandoned decrypted restore archive")
+                    android.util.Log.w("BackupManager", "Could not remove abandoned decrypted restore archive")
                 }
             }
             pendingRestore(context).apply { settingsJson ->
