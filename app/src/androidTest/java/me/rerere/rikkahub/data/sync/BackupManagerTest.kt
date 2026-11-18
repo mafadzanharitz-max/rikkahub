@@ -56,6 +56,24 @@ class BackupManagerTest {
         directory.deleteRecursively()
     }
 
+    @Test fun remoteBackupEndpointsRequireHttps() {
+        requireSecureBackupEndpoint("https://backup.example.com/dav")
+        requireSecureBackupEndpoint("backup.example.com/dav")
+        var rejected = false
+        try {
+            requireSecureBackupEndpoint("http://backup.example.com/dav")
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue(rejected)
+    }
+
+    @Test fun loopbackBackupEndpointsMayUseHttp() {
+        requireSecureBackupEndpoint("http://localhost:8080/dav")
+        requireSecureBackupEndpoint("http://127.0.0.1:8080/dav")
+        requireSecureBackupEndpoint("http://[::1]:8080/dav")
+    }
+
     @Test fun oldArchiveIgnoresShmAndLeavesLiveDatabaseUntouchedUntilStartup() = runBlocking {
         val source = File(directory, "source")
         val archive = File(directory, "legacy.zip")
