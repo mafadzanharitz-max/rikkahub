@@ -1,10 +1,10 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -200,7 +200,7 @@ fun WebDavTab(
             onDismissRequest = { passwordDialogPurpose = null; backupPassword = ""; pendingRestoreItem = null },
             title = { Text(if (passwordDialogPurpose == "backup") "Encrypt backup" else "Unlock backup") },
             text = {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     Text("Use at least 10 characters. RikkaHub does not store this password. You will need it to restore the archive.")
                     OutlinedTextField(
                         value = backupPassword,
