@@ -137,10 +137,34 @@ internal class McpSessionRegistry(
     suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): CallToolResult {
         val session = sessions[serverId]
             ?: throw McpClientUnavailableException("No MCP session for server $serverId")
-        val freshConfig = oauthCoordinator.ensureFreshToken(session.config)
+
+        // The tool list captured by ChatToolFactory may be stale after a user changes settings.
+        // Re-read the source of truth before refreshing credentials or touching the remote server.
+        val configuredServer = settingsStore.settingsFlow.value.mcpServers
+            .find { it.id == serverId }
+            ?: throw McpClientUnavailableException("MCP server $serverId is no longer configured")
+        if (!configuredServer.commonOptions.enable || configuredServer.commonOptions.name.isBlank()) {
+            throw McpClientUnavailableException("MCP server $serverId is disabled")
+        }
+        val configuredTool = configuredServer.commonOptions.tools
+            .find { it.name == toolName && it.enable }
+            ?: throw McpClientUnavailableException("MCP tool $toolName is disabled or no longer configured")
+
+        val freshConfig = oauthCoordinator.ensureFreshToken(configuredServer)
         if (!hasSameConnectionParameters(session.connectedConfig, freshConfig)) {
             session.config = freshConfig
             addClient(freshConfig)
+        }
+
+        // OAuth refresh and reconnect can suspend. Revalidate once more at the execution boundary.
+        val latestServer = settingsStore.settingsFlow.value.mcpServers
+            .find { it.id == serverId }
+            ?: throw McpClientUnavailableException("MCP server $serverId was removed before execution")
+        if (!latestServer.commonOptions.enable || latestServer.commonOptions.name.isBlank()) {
+            throw McpClientUnavailableException("MCP server $serverId was disabled before execution")
+        }
+        if (latestServer.commonOptions.tools.none { it.name == configuredTool.name && it.enable }) {
+            throw McpClientUnavailableException("MCP tool $toolName was disabled before execution")
         }
 
         val sdkClient = session.client
