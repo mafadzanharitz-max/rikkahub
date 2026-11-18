@@ -20,10 +20,24 @@ import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import kotlin.uuid.Uuid
 
 class SettingsFieldsTest {
+    @Before
+    fun useJvmTestCipher() {
+        SettingsSecretCodec.encrypt = { "test:" + it }
+        SettingsSecretCodec.decrypt = { it.removePrefix("test:") }
+    }
+
+    @After
+    fun restoreProductionCipher() {
+        SettingsSecretCodec.encrypt = me.rerere.rikkahub.utils.SecretCipher::encrypt
+        SettingsSecretCodec.decrypt = me.rerere.rikkahub.utils.SecretCipher::decrypt
+    }
+
     @OptIn(ExperimentalSerializationApi::class)
     @Test
     fun `every settings property has exactly one field`() {
