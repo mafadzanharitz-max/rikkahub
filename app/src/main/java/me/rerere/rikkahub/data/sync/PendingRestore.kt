@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.sync
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -66,6 +67,15 @@ internal class PendingRestore(
             }
             val settings = File(pending, "settings.json")
             if (settings.isFile) restoreSettings(settings.readText())
+        } catch (e: CancellationException) {
+            // Cancellation is not an import failure. Roll back live-file moves, retain the
+            // authenticated staging archive and journal, then let startup cancellation propagate.
+            try {
+                rollback(entries)
+            } catch (rollbackError: Exception) {
+                e.addSuppressed(rollbackError)
+            }
+            throw e
         } catch (e: Exception) {
             try {
                 rollback(entries)
