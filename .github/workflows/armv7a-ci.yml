@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - port/armv7a-3.3.0
+      - security/http-log-redaction
   workflow_dispatch:
 
 permissions:
