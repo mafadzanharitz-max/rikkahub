@@ -30,7 +30,7 @@ class WebDavSync(
     }
 
     suspend fun backup(config: WebDavConfig, password: String) = withContext(Dispatchers.IO) {
-        val file = prepareBackupFile(config)
+        val file = prepareBackupFile(config, password)
         val client = getClient(config)
 
         // Ensure the backup directory exists
@@ -106,13 +106,13 @@ class WebDavSync(
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
         password = password,
-        password = password,
     )
 
     private suspend fun restoreFromBackupFile(backupFile: File, config: WebDavConfig, password: String) = backupManager.stageRestore(
         archive = backupFile,
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
+        password = password,
     )
 
 }
