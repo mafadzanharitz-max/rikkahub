@@ -20,6 +20,7 @@ import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -75,6 +76,37 @@ class SettingsFieldsTest {
         assertEquals("LOW", stored["fast_model_reasoning_level"])
         assertEquals("""[{"id":"00000000-0000-0000-0000-000000000007","name":"tag"}]""", stored["assistant_tags"])
         assertEquals("""{"resultSize":3}""", stored["search_common"])
+    }
+
+    @Test
+    fun `legacy sensitive settings are encrypted atomically and migration is idempotent`() {
+        val preferences = mutablePreferencesOf(
+            SettingsStore.PROVIDERS to "legacy-providers",
+            SettingsStore.MCP_SERVERS to "legacy-mcp",
+            SettingsStore.WEB_SERVER_ACCESS_PASSWORD to "legacy-password",
+            SettingsStore.NETWORK_SETTING to "legacy-network",
+        )
+
+        preferences.encryptLegacySensitiveSettings()
+        val encryptedProviders = preferences[SettingsStore.PROVIDERS]
+        val encryptedMcp = preferences[SettingsStore.MCP_SERVERS]
+        val encryptedPassword = preferences[SettingsStore.WEB_SERVER_ACCESS_PASSWORD]
+        val encryptedNetwork = preferences[SettingsStore.NETWORK_SETTING]
+
+        assertTrue(encryptedProviders!!.startsWith("rikkahub-encrypted:v1:"))
+        assertTrue(encryptedMcp!!.startsWith("rikkahub-encrypted:v1:"))
+        assertTrue(encryptedPassword!!.startsWith("rikkahub-encrypted:v1:"))
+        assertTrue(encryptedNetwork!!.startsWith("rikkahub-encrypted:v1:"))
+        assertEquals("legacy-providers", SettingsSecretCodec.decrypt(encryptedProviders.removePrefix("rikkahub-encrypted:v1:")))
+        assertEquals("legacy-mcp", SettingsSecretCodec.decrypt(encryptedMcp.removePrefix("rikkahub-encrypted:v1:")))
+        assertEquals("legacy-password", SettingsSecretCodec.decrypt(encryptedPassword.removePrefix("rikkahub-encrypted:v1:")))
+        assertEquals("legacy-network", SettingsSecretCodec.decrypt(encryptedNetwork.removePrefix("rikkahub-encrypted:v1:")))
+
+        preferences.encryptLegacySensitiveSettings()
+        assertEquals(encryptedProviders, preferences[SettingsStore.PROVIDERS])
+        assertEquals(encryptedMcp, preferences[SettingsStore.MCP_SERVERS])
+        assertEquals(encryptedPassword, preferences[SettingsStore.WEB_SERVER_ACCESS_PASSWORD])
+        assertEquals(encryptedNetwork, preferences[SettingsStore.NETWORK_SETTING])
     }
 
     @Test
