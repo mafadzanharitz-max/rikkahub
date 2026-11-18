@@ -40,6 +40,24 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 private const val TAG = "McpSessionRegistry"
+
+/**
+ * MCP endpoints may carry API keys, OAuth tokens, and tool data. Require TLS for
+ * remote servers; permit cleartext only for explicit loopback development endpoints.
+ */
+internal fun requireSecureMcpEndpoint(rawEndpoint: String) {
+    require(rawEndpoint.isNotBlank()) { "MCP server address is required" }
+    val uri = java.net.URI(rawEndpoint.trim())
+    val scheme = uri.scheme?.lowercase()
+    val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.lowercase()
+    require(!host.isNullOrBlank()) { "Invalid MCP server address" }
+    require(uri.rawUserInfo == null) { "Credentials must be configured in MCP headers, not the URL" }
+    val loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
+    require(scheme == "https" || (scheme == "http" && loopback)) {
+        "Remote MCP servers must use HTTPS. HTTP is allowed only for localhost."
+    }
+}
+
 private const val MAX_RECONNECT_ATTEMPTS = 5
 private const val BASE_RECONNECT_DELAY_MS = 1000L
 private const val MAX_RECONNECT_DELAY_MS = 30000L
@@ -143,6 +161,7 @@ internal class McpSessionRegistry(
         val configuredServer = settingsStore.settingsFlow.value.mcpServers
             .find { it.id == serverId }
             ?: throw McpClientUnavailableException("MCP server $serverId is no longer configured")
+        requireSecureMcpEndpoint(configuredServer.serverUrl)
         if (!configuredServer.commonOptions.enable || configuredServer.commonOptions.name.isBlank()) {
             throw McpClientUnavailableException("MCP server $serverId is disabled")
         }
@@ -244,6 +263,7 @@ internal class McpSessionRegistry(
                 session.reconnectAttempt = 0
             }
 
+            requireSecureMcpEndpoint(requestedConfig.serverUrl)
             val config = oauthCoordinator.ensureFreshToken(session.config)
             session.config = config
             if (!forceReconnect &&
