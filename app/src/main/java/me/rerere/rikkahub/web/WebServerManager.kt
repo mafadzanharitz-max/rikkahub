@@ -70,6 +70,13 @@ class WebServerManager(
             )
             try {
                 _state.value = _state.value.copy(isLoading = true)
+                val currentSettings = settingsStore.awaitLoaded()
+                if (!localhostOnly && !currentSettings.webServerJwtEnabled) {
+                    _state.value = baseState.copy(
+                        error = "Enable JWT authentication before exposing the Web Server to the network"
+                    )
+                    return@launch
+                }
                 Log.i(TAG, "Starting web server on $host:$port")
                 if (!isPortAvailable(port)) {
                     Log.w(TAG, "Port $port is already in use")
