@@ -89,7 +89,7 @@ class WebServerManager(
                 return
             }
             server = startWebServer(port = port, host = host) {
-                configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager)
+                configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager, localhostOnly)
             }.start(wait = false)
             _state.value = baseState.copy(isRunning = true)
             if (!localhostOnly) {
