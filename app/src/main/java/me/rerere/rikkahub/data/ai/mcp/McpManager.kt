@@ -127,6 +127,16 @@ class McpManager(
             throw e
         } catch (e: McpClientUnavailableException) {
             return listOf(UIMessagePart.Text("Failed to execute MCP tool: ${e.message ?: e.javaClass.name}"))
+        } catch (e: Exception) {
+            // MCP SDK exceptions can contain remote response bodies, credential-bearing URLs,
+            // or echoed authorization data. AgentLoop otherwise exposes exception messages and
+            // stack traces to the conversation, so keep this boundary deliberately generic.
+            val errorType = e.javaClass.simpleName.ifBlank { "UnknownError" }
+            return listOf(
+                UIMessagePart.Text(
+                    "MCP tool execution failed ($errorType). Remote error details were withheld for security."
+                )
+            )
         }
         return result.content.map { content ->
             when (content) {
