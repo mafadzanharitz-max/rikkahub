@@ -427,9 +427,9 @@ class BackupManager(
                             currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            cipher.update(buffer, 0, count)?.let(output::write)
+                            cipher.update(buffer, 0, count)?.let { output.write(it) }
                         }
-                        cipher.doFinal().let(output::write)
+                        output.write(cipher.doFinal())
                         output.fd.sync()
                     }
                 }
