@@ -97,7 +97,7 @@ internal class McpOAuthCoordinator(
             val tokenEndpoint = oauth.tokenEndpoint ?: return@withLock config
             requireSecureMcpEndpoint(tokenEndpoint)
             val clientId = oauth.clientId ?: return@withLock config
-            runCatching {
+            try {
                 val token = oauthClient.refreshToken(
                     OAuthHttpClient.RefreshTokenRequest(
                         tokenEndpoint = tokenEndpoint,
@@ -115,8 +115,12 @@ internal class McpOAuthCoordinator(
                     scope = token.scope ?: oauth.scope,
                 )
                 persistRefreshedOAuthState(config, updated)
-            }.getOrElse {
-                Log.w(TAG, "Token refresh failed for ${config.commonOptions.name}: ${it.message}")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Never log server-provided exception messages: OAuth responses may contain
+                // credential material. Also preserve coroutine cancellation semantics.
+                Log.w(TAG, "Token refresh failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
                 settingsStore.settingsFlow.value.mcpServers.find { server -> server.id == config.id }
                     ?: config
             }
