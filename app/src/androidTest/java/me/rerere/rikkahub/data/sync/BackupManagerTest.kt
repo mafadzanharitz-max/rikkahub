@@ -74,6 +74,16 @@ class BackupManagerTest {
         requireSecureBackupEndpoint("http://[::1]:8080/dav")
     }
 
+    @Test fun backupEndpointsRejectCredentialsEmbeddedInUrl() {
+        var rejected = false
+        try {
+            requireSecureBackupEndpoint("https://user:secret@backup.example.com/dav")
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue(rejected)
+    }
+
     @Test fun oldArchiveIgnoresShmAndLeavesLiveDatabaseUntouchedUntilStartup() = runBlocking {
         val source = File(directory, "source")
         val archive = File(directory, "legacy.zip")
@@ -116,6 +126,47 @@ class BackupManagerTest {
         assertFalse(File(stagedDatabase.path + "-wal").exists())
         assertFalse(File(stagedDatabase.path + "-shm").exists())
         assertEquals("live", probe(liveDatabase))
+    }
+
+    @Test fun encryptedArchiveRejectsCiphertextTampering() = runBlocking {
+        val archive = manager.createBackup(
+            includeDatabase = false,
+            includeFiles = false,
+            password = "correct backup passphrase",
+        )
+        java.io.RandomAccessFile(archive, "rw").use { file ->
+            file.seek(file.length() - 1)
+            val original = file.read()
+            file.seek(file.length() - 1)
+            file.write(original xor 0x01)
+        }
+        var failed = false
+        try {
+            manager.stageRestore(
+                archive,
+                includeDatabase = false,
+                includeFiles = false,
+                password = "correct backup passphrase",
+            )
+        } catch (_: Exception) {
+            failed = true
+        }
+        assertTrue(failed)
+        assertFalse(File(context.noBackupFilesDir, "backup-restore/pending").exists())
+    }
+
+    @Test fun encryptedArchiveRequiresStrongPassphrase() = runBlocking {
+        var failed = false
+        try {
+            manager.createBackup(
+                includeDatabase = false,
+                includeFiles = false,
+                password = "short",
+            )
+        } catch (_: IllegalArgumentException) {
+            failed = true
+        }
+        assertTrue(failed)
     }
 
     @Test fun encryptedArchiveRejectsIncorrectPassword() = runBlocking {
