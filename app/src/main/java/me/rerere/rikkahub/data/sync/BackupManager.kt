@@ -57,6 +57,7 @@ internal fun requireSecureBackupEndpoint(rawEndpoint: String) {
     val scheme = uri.scheme?.lowercase()
     val host = uri.host?.removePrefix("[")?.removeSuffix("]")?.lowercase()
     require(!host.isNullOrBlank()) { "Invalid backup server address" }
+    require(uri.rawUserInfo == null) { "Credentials must be configured separately, not in the backup URL" }
     val isLoopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
     require(scheme == "https" || (scheme == "http" && isLoopback)) {
         "Remote backup servers must use HTTPS. HTTP is allowed only for localhost."
