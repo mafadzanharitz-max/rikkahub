@@ -228,10 +228,13 @@ class BackupManager(
 
         private fun isEncryptedArchive(file: File): Boolean {
             if (file.length() < BACKUP_MAGIC.size) return false
-            return file.inputStream().use { input ->
-                val header = ByteArray(BACKUP_MAGIC.size)
-                input.read(header) == header.size && header.contentEquals(BACKUP_MAGIC)
-            }
+            return runCatching {
+                DataInputStream(file.inputStream().buffered()).use { input ->
+                    val header = ByteArray(BACKUP_MAGIC.size)
+                    input.readFully(header)
+                    header.contentEquals(BACKUP_MAGIC)
+                }
+            }.getOrDefault(false)
         }
 
         private fun backupKey(password: String, salt: ByteArray): javax.crypto.SecretKey {
