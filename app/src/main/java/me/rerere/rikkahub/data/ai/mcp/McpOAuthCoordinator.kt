@@ -138,6 +138,7 @@ internal class McpOAuthCoordinator(
     private suspend fun authorize(config: McpServerConfig, context: Context) = withContext(Dispatchers.IO) {
         val serverUrl = config.serverUrl
         requireSecureMcpEndpoint(serverUrl)
+        ensureAuthorizationTargetUnchanged(config)
 
         // 部分服务器（如 Zomato）不提供 RFC 9728 元数据，按旧版规范退回到服务器 origin 作为授权服务器
         val protectedResource = runCatching { discoveryClient.discoverProtectedResource(serverUrl) }
@@ -194,8 +195,8 @@ internal class McpOAuthCoordinator(
                 clientSecret = registration.clientSecret
             }
 
-            persistOAuthState(
-                config.id,
+            persistAuthorizationState(
+                config,
                 (existing ?: McpOAuthState()).copy(
                     enabled = true,
                     clientId = clientId,
@@ -228,6 +229,9 @@ internal class McpOAuthCoordinator(
             callback.error?.let { error(buildAuthorizationError(it, callback.errorDescription)) }
             val code = callback.code ?: error("授权失败: 未返回授权码")
 
+            // Browser authorization can take several minutes; do not exchange a code for a server
+            // configuration that the user has changed while the browser was open.
+            ensureAuthorizationTargetUnchanged(config)
             val token = oauthClient.exchangeAuthorizationCode(
                 OAuthHttpClient.AuthorizationCodeTokenRequest(
                     tokenEndpoint = tokenEndpoint,
@@ -239,8 +243,8 @@ internal class McpOAuthCoordinator(
                     resources = listOf(resource),
                 )
             )
-            persistOAuthState(
-                config.id,
+            persistAuthorizationState(
+                config,
                 McpOAuthState(
                     enabled = true,
                     clientId = clientId,
@@ -264,6 +268,42 @@ internal class McpOAuthCoordinator(
 
     private fun buildAuthorizationError(error: String, description: String?): String =
         if (description.isNullOrBlank()) "授权失败: $error" else "授权失败: $error ($description)"
+
+    /**
+     * OAuth browser flows outlive the settings snapshot that started them. Revalidate the
+     * server identity and connection target before persisting credentials, including inside
+     * the SettingsStore update lock to close the check/write race.
+     */
+    private suspend fun ensureAuthorizationTargetUnchanged(expected: McpServerConfig) {
+        val current = settingsStore.settingsFlow.value.mcpServers.find { it.id == expected.id }
+            ?: error("MCP server was removed during OAuth authorization")
+        check(sameAuthorizationTarget(expected, current)) {
+            "MCP server configuration changed during OAuth authorization"
+        }
+    }
+
+    private suspend fun persistAuthorizationState(expected: McpServerConfig, oauth: McpOAuthState?) {
+        settingsStore.update { old ->
+            val current = old.mcpServers.find { it.id == expected.id }
+                ?: error("MCP server was removed during OAuth authorization")
+            check(sameAuthorizationTarget(expected, current)) {
+                "MCP server configuration changed during OAuth authorization"
+            }
+            old.copy(
+                mcpServers = old.mcpServers.map { server ->
+                    if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
+                    else server
+                }
+            )
+        }
+    }
+
+    private fun sameAuthorizationTarget(left: McpServerConfig, right: McpServerConfig): Boolean =
+        left::class == right::class &&
+            left.serverUrl == right.serverUrl &&
+            left.commonOptions.name == right.commonOptions.name &&
+            left.commonOptions.headers.filter { it.first.isNotBlank() } ==
+            right.commonOptions.headers.filter { it.first.isNotBlank() }
 
     private suspend fun persistOAuthState(configId: Uuid, oauth: McpOAuthState?) {
         settingsStore.update { old ->
