@@ -98,6 +98,7 @@ fun ImportExportTab(
                     )
                 }
                 isExporting = false
+                localRestorePassword = ""
             }
         }
     }
@@ -197,6 +198,7 @@ fun ImportExportTab(
                     )
                 }
                 isRestoring = false
+                localRestorePassword = ""
             }
         }
     }
