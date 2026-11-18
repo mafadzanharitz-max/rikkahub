@@ -64,6 +64,15 @@ private inline fun <reified T> json(
  */
 private const val ENCRYPTED_SETTINGS_PREFIX = "rikkahub-encrypted:v1:"
 
+/** Indirection keeps JVM settings tests independent of Android Keystore; production uses SecretCipher. */
+internal object SettingsSecretCodec {
+    @Volatile
+    var encrypt: (String) -> String = SecretCipher::encrypt
+
+    @Volatile
+    var decrypt: (String) -> String = SecretCipher::decrypt
+}
+
 private inline fun <reified T> encryptedJson(
     key: Preferences.Key<String>,
     property: KProperty1<Settings, T>,
@@ -72,10 +81,10 @@ private inline fun <reified T> encryptedJson(
     key,
     property,
     set,
-    encode = { ENCRYPTED_SETTINGS_PREFIX + SecretCipher.encrypt(JsonInstant.encodeToString(it)) },
+    encode = { ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(JsonInstant.encodeToString(it)) },
     decode = { stored ->
         val plaintext = if (stored.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
-            SecretCipher.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
+            SettingsSecretCodec.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
         } else {
             stored
         }
@@ -91,10 +100,10 @@ private fun encryptedSecret(
     key,
     property,
     set,
-    encode = { ENCRYPTED_SETTINGS_PREFIX + SecretCipher.encrypt(it) },
+    encode = { ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(it) },
     decode = { stored ->
         if (stored.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
-            SecretCipher.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
+            SettingsSecretCodec.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
         } else {
             stored
         }
@@ -106,7 +115,7 @@ internal fun MutablePreferences.encryptLegacySensitiveSettings() {
     fun encrypt(key: Preferences.Key<String>) {
         val value = this[key] ?: return
         if (!value.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
-            this[key] = ENCRYPTED_SETTINGS_PREFIX + SecretCipher.encrypt(value)
+            this[key] = ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(value)
         }
     }
     encrypt(SettingsStore.NETWORK_SETTING)
