@@ -3,10 +3,9 @@ package me.rerere.rikkahub.ui.pages.backup.tabs
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
@@ -28,6 +26,7 @@ import me.rerere.hugeicons.stroke.View
 import me.rerere.hugeicons.stroke.ViewOff
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.sync.webdav.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
@@ -82,7 +81,7 @@ fun WebDavTab(
             }
         },
         onBackup = { passwordDialogPurpose = "backup" },
-
+    ) {
         RemoteBackupStatus(
             lastBackupTime = settings.backupReminderConfig.lastBackupTime,
             filesState = backupItemsState,
@@ -224,7 +223,7 @@ fun WebDavTab(
                             scope.launch {
                                 isBackingUp = true
                                 runCatching {
-                                    vm.backup(backupPassword)
+                                    vm.backup(password)
                                     vm.loadBackupFileItems()
                                     toaster.show(context.getString(R.string.backup_page_backup_success), type = ToastType.Success)
                                 }.onFailure { err ->
@@ -238,7 +237,7 @@ fun WebDavTab(
                             if (item != null) scope.launch {
                                 restoringItemId = item.displayName
                                 runCatching {
-                                    vm.restore(item = item, password = backupPassword)
+                                    vm.restore(item = item, password = password)
                                     toaster.show(context.getString(R.string.backup_page_restore_success), type = ToastType.Success)
                                     showBackupFiles = false
                                     onShowRestartDialog()
