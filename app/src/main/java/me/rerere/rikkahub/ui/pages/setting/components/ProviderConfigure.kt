@@ -320,6 +320,9 @@ private fun ProviderConfigureOpenAI(
             value = provider.baseUrl,
             onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
             isError = provider.baseUrl.isNotBlank() && !provider.baseUrl.isValidBaseUrl(),
+            supportingText = if (provider.baseUrl.toHttpUrlOrNull()?.isHttps == false) {
+                { Text(stringResource(R.string.setting_provider_page_http_endpoint_warning)) }
+            } else null,
             trailingIcon = resetBaseUrlButton(provider) {
                 onEdit(provider.copy(baseUrl = provider.defaultBaseUrlForReset()))
             },
