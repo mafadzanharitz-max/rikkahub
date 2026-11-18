@@ -135,11 +135,15 @@ internal class McpOAuthCoordinator(
             return false
         }
         if (looksUnauthorized(error)) return true
-        return runCatching { discoveryClient.discoverProtectedResource(config.serverUrl) }
-            .onFailure {
-                Log.i(TAG, "OAuth probe failed for ${config.commonOptions.name} (${it.javaClass.simpleName})")
-            }
-            .isSuccess
+        return try {
+            discoveryClient.discoverProtectedResource(config.serverUrl)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.i(TAG, "OAuth probe failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
+            false
+        }
     }
 
     private suspend fun authorize(config: McpServerConfig, context: Context) = withContext(Dispatchers.IO) {
@@ -148,9 +152,14 @@ internal class McpOAuthCoordinator(
         ensureAuthorizationTargetUnchanged(config)
 
         // 部分服务器（如 Zomato）不提供 RFC 9728 元数据，按旧版规范退回到服务器 origin 作为授权服务器
-        val protectedResource = runCatching { discoveryClient.discoverProtectedResource(serverUrl) }
-            .onFailure { Log.i(TAG, "Protected resource discovery failed, fallback to server origin (${it.javaClass.simpleName})") }
-            .getOrNull()
+        val protectedResource = try {
+            discoveryClient.discoverProtectedResource(serverUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.i(TAG, "Protected resource discovery failed, fallback to server origin (${e.javaClass.simpleName})")
+            null
+        }
         val issuer = protectedResource?.authorizationServers?.firstOrNull()
             ?: McpOAuthDiscoveryClient.serverOrigin(serverUrl)
             ?: error("无法确定授权服务器")
