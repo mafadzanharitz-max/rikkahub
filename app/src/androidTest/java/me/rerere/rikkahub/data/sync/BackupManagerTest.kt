@@ -132,6 +132,7 @@ class BackupManagerTest {
         val current = manager.createBackup(includeDatabase = false, includeFiles = false, password = "test backup passphrase")
         manager.stageRestore(current, includeDatabase = false, includeFiles = false, password = "test backup passphrase")
         val settingsJson = File(context.noBackupFilesDir, "backup-restore/pending/settings.json").readText()
+        File(context.noBackupFilesDir, "backup-restore/pending").deleteRecursively()
         val archive = File(directory, "no-launch-count.zip")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("settings.json"))
