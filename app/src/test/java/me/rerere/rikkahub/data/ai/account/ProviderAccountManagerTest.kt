@@ -17,12 +17,14 @@ import me.rerere.ai.provider.OAuthCredential
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.SettingsSecretCodec
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -64,10 +66,18 @@ class ProviderAccountManagerTest {
         }
         .build()
 
+    @Before
+    fun useJvmTestCipher() {
+        SettingsSecretCodec.encrypt = { "test:" + it }
+        SettingsSecretCodec.decrypt = { it.removePrefix("test:") }
+    }
+
     @After
     fun tearDown() = runBlocking {
         appScope.coroutineContext.job.cancelAndJoin()
         storeScope.coroutineContext.job.cancelAndJoin()
+        SettingsSecretCodec.encrypt = me.rerere.rikkahub.utils.SecretCipher::encrypt
+        SettingsSecretCodec.decrypt = me.rerere.rikkahub.utils.SecretCipher::decrypt
     }
 
     private val provider = ProviderSetting.ChatGPT(
