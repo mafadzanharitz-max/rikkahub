@@ -70,7 +70,9 @@ internal class McpOAuthCoordinator(
 
     fun forget(configId: Uuid) {
         authorizationJobs.remove(configId)?.cancel()
-        refreshLocks.remove(configId)
+        // Do not remove a lock that may currently be held by an in-flight refresh. A server
+        // re-added with the same ID must reuse that same mutex rather than race a second refresh
+        // against the old refresh token. The map is bounded in practice by configured server IDs.
     }
 
     suspend fun clearAuthorization(config: McpServerConfig): McpServerConfig {
