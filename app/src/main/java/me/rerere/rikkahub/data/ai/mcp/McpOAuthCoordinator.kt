@@ -95,6 +95,7 @@ internal class McpOAuthCoordinator(
             if (!oauth.accessToken.isNullOrBlank() && !expired) return@withLock config
 
             val tokenEndpoint = oauth.tokenEndpoint ?: return@withLock config
+            requireSecureMcpEndpoint(tokenEndpoint)
             val clientId = oauth.clientId ?: return@withLock config
             runCatching {
                 val token = oauthClient.refreshToken(
@@ -136,7 +137,7 @@ internal class McpOAuthCoordinator(
 
     private suspend fun authorize(config: McpServerConfig, context: Context) = withContext(Dispatchers.IO) {
         val serverUrl = config.serverUrl
-        require(serverUrl.isNotBlank()) { "Server URL 为空，无法授权" }
+        requireSecureMcpEndpoint(serverUrl)
 
         // 部分服务器（如 Zomato）不提供 RFC 9728 元数据，按旧版规范退回到服务器 origin 作为授权服务器
         val protectedResource = runCatching { discoveryClient.discoverProtectedResource(serverUrl) }
@@ -150,6 +151,10 @@ internal class McpOAuthCoordinator(
             ?: error("授权服务器缺少 authorization_endpoint")
         val tokenEndpoint = metadata.tokenEndpoint
             ?: error("授权服务器缺少 token_endpoint")
+        requireSecureMcpEndpoint(issuer)
+        requireSecureMcpEndpoint(authorizationEndpoint)
+        requireSecureMcpEndpoint(tokenEndpoint)
+        metadata.registrationEndpoint?.let(::requireSecureMcpEndpoint)
         val scope = config.commonOptions.oauth?.scope
             ?: protectedResource?.scopesSupported?.joinToString(" ")
             ?: metadata.scopesSupported?.joinToString(" ")
