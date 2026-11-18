@@ -56,7 +56,7 @@ internal class McpOAuthCoordinator(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "OAuth authorization failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
-                updateStatus(config.id, McpStatus.Error.from(e, fallbackMessage = "OAuth authorization failed"))
+                updateStatus(config.id, McpStatus.Error.fromRemote(e))
             }
         }
         authorizationJobs[config.id] = job
