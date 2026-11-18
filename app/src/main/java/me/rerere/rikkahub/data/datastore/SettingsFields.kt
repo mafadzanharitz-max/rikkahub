@@ -109,7 +109,9 @@ internal fun MutablePreferences.encryptLegacySensitiveSettings() {
             this[key] = ENCRYPTED_SETTINGS_PREFIX + SecretCipher.encrypt(value)
         }
     }
+    encrypt(SettingsStore.NETWORK_SETTING)
     encrypt(SettingsStore.PROVIDERS)
+    encrypt(SettingsStore.SEARCH_SERVICES)
     encrypt(SettingsStore.MCP_SERVERS)
     encrypt(SettingsStore.WEBDAV_CONFIG)
     encrypt(SettingsStore.S3_CONFIG)
@@ -146,7 +148,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(THEME_ID, Settings::themeId) { copy(themeId = it) },
         json(CUSTOM_THEMES, Settings::customThemes) { copy(customThemes = it) },
         json(DISPLAY_SETTING, Settings::displaySetting) { copy(displaySetting = it) },
-        json(NETWORK_SETTING, Settings::networkSetting) { copy(networkSetting = it) },
+        encryptedJson(NETWORK_SETTING, Settings::networkSetting) { copy(networkSetting = it) },
         plain(DEVELOPER_MODE, Settings::developerMode) { copy(developerMode = it) },
 
         // 模型选择
@@ -192,7 +194,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         json(ASSISTANT_TAGS, Settings::assistantTags) { copy(assistantTags = it) },
 
         // 搜索
-        json(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
+        encryptedJson(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
         json(SEARCH_COMMON, Settings::searchCommonOptions) { copy(searchCommonOptions = it) },
         plain(SEARCH_SELECTED, Settings::searchServiceSelected) { copy(searchServiceSelected = it) },
 
