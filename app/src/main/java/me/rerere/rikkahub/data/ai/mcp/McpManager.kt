@@ -48,7 +48,8 @@ class McpManager(
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.MINUTES)
         .writeTimeout(120, TimeUnit.SECONDS)
-        .followSslRedirects(true)
+        // Never follow HTTPS-to-HTTP redirects: MCP requests may carry credentials.
+        .followSslRedirects(false)
         .followRedirects(true)
         .build()
 
