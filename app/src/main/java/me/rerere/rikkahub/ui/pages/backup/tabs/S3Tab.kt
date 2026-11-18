@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.backup.tabs
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -141,7 +142,7 @@ fun S3Tab(
             onDismissRequest = { passwordDialogPurpose = null; backupPassword = ""; pendingRestoreItem = null },
             title = { Text(if (passwordDialogPurpose == "backup") "Encrypt backup" else "Unlock backup") },
             text = {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     Text("Use at least 10 characters. RikkaHub does not store this password. You will need it to restore the archive.")
                     OutlinedTextField(
                         value = backupPassword,
