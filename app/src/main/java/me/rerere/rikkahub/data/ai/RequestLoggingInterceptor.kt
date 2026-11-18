@@ -2,10 +2,16 @@ package me.rerere.rikkahub.data.ai
 
 import me.rerere.common.android.LogEntry
 import me.rerere.common.android.Logging
+import okhttp3.Headers
 import okhttp3.Interceptor
 import okhttp3.Response
-import okio.Buffer
 
+/**
+ * HTTP diagnostics must never persist credentials or user/provider payloads.
+ *
+ * Request bodies are deliberately omitted: provider payloads can contain prompts,
+ * attachments metadata, tool arguments, and occasionally credentials.
+ */
 class RequestLoggingInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         if (!Logging.isRequestLoggingEnabled()) {
@@ -14,61 +20,86 @@ class RequestLoggingInterceptor : Interceptor {
 
         val request = chain.request()
         val startTime = System.currentTimeMillis()
-
-        val requestHeaders = request.headers.toMap()
-        val requestBody = request.body?.let { body ->
-            val buffer = Buffer()
-            body.writeTo(buffer)
-            buffer.readUtf8()
-        }
+        val requestHeaders = request.headers.redactedMap()
 
         val response: Response
-        var error: String? = null
-
         try {
             response = chain.proceed(request)
         } catch (e: Exception) {
-            error = e.message
             Logging.logRequest(
                 LogEntry.RequestLog(
                     tag = "HTTP",
-                    url = request.url.toString(),
+                    url = request.url.redacted().toString(),
                     method = request.method,
                     requestHeaders = requestHeaders,
-                    requestBody = requestBody,
-                    error = error
+                    requestBody = null,
+                    error = "Request failed (${e.javaClass.simpleName})"
                 )
             )
             throw e
         }
 
         val durationMs = System.currentTimeMillis() - startTime
-        val responseHeaders = response.headers.toMap()
-
         Logging.logRequest(
             LogEntry.RequestLog(
                 tag = "HTTP",
-                url = request.url.toString(),
+                url = request.url.redacted().toString(),
                 method = request.method,
                 requestHeaders = requestHeaders,
-                requestBody = requestBody,
+                requestBody = null,
                 responseCode = response.code,
-                responseHeaders = responseHeaders,
+                responseHeaders = response.headers.redactedMap(),
                 durationMs = durationMs,
-                error = error
+                error = null
             )
         )
 
         return response
     }
 
-    private fun okhttp3.Headers.toMap(): Map<String, String> {
+    private fun Headers.redactedMap(): Map<String, String> {
         return names().associateWith { name ->
-            if (name.equals("Proxy-Authorization", ignoreCase = true)) {
-                "██"
+            if (name.lowercase() in SENSITIVE_HEADERS) {
+                REDACTED
             } else {
                 get(name) ?: ""
             }
         }
+    }
+
+    private fun okhttp3.HttpUrl.redacted(): okhttp3.HttpUrl {
+        val builder = newBuilder()
+        queryParameterNames
+            .filter { it.lowercase() in SENSITIVE_QUERY_PARAMETERS }
+            .forEach { builder.removeAllQueryParameters(it) }
+        return builder.build()
+    }
+
+    private companion object {
+        const val REDACTED = "[REDACTED]"
+
+        val SENSITIVE_HEADERS = setOf(
+            "authorization",
+            "proxy-authorization",
+            "x-api-key",
+            "api-key",
+            "x-goog-api-key",
+            "cookie",
+            "set-cookie",
+            "x-auth-token",
+        )
+
+        val SENSITIVE_QUERY_PARAMETERS = setOf(
+            "key",
+            "api_key",
+            "apikey",
+            "token",
+            "access_token",
+            "refresh_token",
+            "password",
+            "secret",
+            "signature",
+            "auth",
+        )
     }
 }
