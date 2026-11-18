@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import io.ktor.server.cio.CIOApplicationEngine
 import io.ktor.server.engine.EmbeddedServer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -104,6 +105,8 @@ class WebServerManager(
                 }.onFailure { Log.w(TAG, "NSD register failed", it) }
             }
             Log.i(TAG, "Web server started successfully on $host:$port")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start web server", e)
             _state.value = baseState.copy(error = e.message)
@@ -132,6 +135,8 @@ class WebServerManager(
             }
             _state.value = _state.value.copy(isLoading = false)
             Log.i(TAG, "Web server stopped")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop web server", e)
             _state.value = _state.value.copy(isLoading = false, error = e.message)
