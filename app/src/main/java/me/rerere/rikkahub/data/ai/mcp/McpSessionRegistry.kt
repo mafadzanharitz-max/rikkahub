@@ -182,37 +182,50 @@ internal class McpSessionRegistry(
             addClient(freshConfig)
         }
 
-        // OAuth refresh and reconnect can suspend. Revalidate once more at the execution boundary.
-        val latestServer = settingsStore.settingsFlow.value.mcpServers
-            .find { it.id == serverId }
-            ?: throw McpClientUnavailableException("MCP server $serverId was removed before execution")
-        if (!latestServer.commonOptions.enable || latestServer.commonOptions.name.isBlank()) {
-            throw McpClientUnavailableException("MCP server $serverId was disabled before execution")
-        }
-        val latestTool = latestServer.commonOptions.tools.find { it.name == configuredTool.name && it.enable }
-            ?: throw McpClientUnavailableException("MCP tool $toolName was disabled before execution")
-        if (latestTool.needsApproval && !approved) {
-            throw McpClientUnavailableException("MCP tool $toolName now requires explicit user approval")
-        }
-
-        val sdkClient = session.client
-            ?: throw McpClientUnavailableException("MCP client $serverId is not connected")
-        val config = session.connectedConfig ?: session.config
-        Log.i(TAG, "Calling tool $toolName on $serverId (${config.commonOptions.name})")
-        return try {
-            sdkClient.callTool(
-                request = CallToolRequest(
-                    params = CallToolRequestParams(name = toolName, arguments = args),
-                ),
-                options = RequestOptions(timeout = 120.seconds),
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            if (oauthCoordinator.needsAuthorization(config, e)) {
-                statusStore.update(config.id, McpStatus.NeedsAuthorization)
+        // Keep the final policy check and remote invocation under the lifecycle lock.
+        // This closes the race where a server/tool is disabled or its endpoint changes
+        // after validation but while a reconnect replaces the active MCP client.
+        return session.lifecycleMutex.withLock {
+            val latestServer = settingsStore.settingsFlow.value.mcpServers
+                .find { it.id == serverId }
+                ?: throw McpClientUnavailableException("MCP server $serverId was removed before execution")
+            try {
+                requireSecureMcpEndpoint(latestServer.serverUrl)
+            } catch (e: IllegalArgumentException) {
+                throw McpClientUnavailableException(e.message ?: "MCP endpoint is not secure")
             }
-            throw e
+            if (!latestServer.commonOptions.enable || latestServer.commonOptions.name.isBlank()) {
+                throw McpClientUnavailableException("MCP server $serverId was disabled before execution")
+            }
+            val latestTool = latestServer.commonOptions.tools.find { it.name == configuredTool.name && it.enable }
+                ?: throw McpClientUnavailableException("MCP tool $toolName was disabled before execution")
+            if (latestTool.needsApproval && !approved) {
+                throw McpClientUnavailableException("MCP tool $toolName now requires explicit user approval")
+            }
+
+            val sdkClient = session.client
+                ?: throw McpClientUnavailableException("MCP client $serverId is not connected")
+            val config = session.connectedConfig
+                ?: throw McpClientUnavailableException("MCP client $serverId has no verified connection configuration")
+            if (!hasSameConnectionParameters(config, latestServer)) {
+                throw McpClientUnavailableException("MCP server configuration changed before tool execution")
+            }
+            Log.i(TAG, "Calling tool $toolName on $serverId (${config.commonOptions.name})")
+            try {
+                sdkClient.callTool(
+                    request = CallToolRequest(
+                        params = CallToolRequestParams(name = toolName, arguments = args),
+                    ),
+                    options = RequestOptions(timeout = 120.seconds),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (oauthCoordinator.needsAuthorization(config, e)) {
+                    statusStore.update(config.id, McpStatus.NeedsAuthorization)
+                }
+                throw e
+            }
         }
     }
 
