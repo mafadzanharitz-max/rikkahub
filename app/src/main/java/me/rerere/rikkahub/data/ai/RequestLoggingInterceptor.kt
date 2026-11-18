@@ -69,6 +69,8 @@ class RequestLoggingInterceptor : Interceptor {
 
     private fun okhttp3.HttpUrl.redacted(): okhttp3.HttpUrl {
         val builder = newBuilder()
+        if (username.isNotEmpty()) builder.username(REDACTED)
+        if (password.isNotEmpty()) builder.password(REDACTED)
         queryParameterNames
             .filter { it.lowercase() in SENSITIVE_QUERY_PARAMETERS }
             .forEach { builder.removeAllQueryParameters(it) }
@@ -87,6 +89,11 @@ class RequestLoggingInterceptor : Interceptor {
             "cookie",
             "set-cookie",
             "x-auth-token",
+            "x-api-token",
+            "x-access-token",
+            "x-refresh-token",
+            "x-csrf-token",
+            "x-amz-security-token",
         )
 
         val SENSITIVE_QUERY_PARAMETERS = setOf(
@@ -100,6 +107,19 @@ class RequestLoggingInterceptor : Interceptor {
             "secret",
             "signature",
             "auth",
+            "auth_token",
+            "client_secret",
+            "clientsecret",
+            "id_token",
+            "jwt",
+            "session",
+            "session_token",
+            "sig",
+            "credential",
+            "private_key",
+            "secret_key",
+            "access_key",
+            "x-api-key",
         )
     }
 }
