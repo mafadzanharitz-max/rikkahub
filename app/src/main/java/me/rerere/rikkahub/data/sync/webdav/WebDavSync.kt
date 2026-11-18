@@ -6,6 +6,7 @@ import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.sync.BackupManager
+import me.rerere.rikkahub.data.sync.requireSecureBackupEndpoint
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.utils.fileSizeToString
 import java.io.File
@@ -19,7 +20,9 @@ class WebDavSync(
     private val httpClient: HttpClient,
 ) {
     private fun getClient(config: WebDavConfig): WebDavClient {
-        return WebDavClient(config, httpClient)
+        val normalizedUrl = if ("://" in config.url) config.url else "https://${config.url}"
+        requireSecureBackupEndpoint(normalizedUrl)
+        return WebDavClient(config.copy(url = normalizedUrl), httpClient)
     }
 
     suspend fun testConnection(config: WebDavConfig) = withContext(Dispatchers.IO) {
