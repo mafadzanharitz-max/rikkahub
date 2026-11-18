@@ -29,7 +29,7 @@ class S3Sync(
         Log.i(TAG, "testS3: Connection successful")
     }
 
-    suspend fun backupToS3(config: S3Config) = withContext(Dispatchers.IO) {
+    suspend fun backupToS3(config: S3Config, password: String) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(config)
         val client = getS3Client(config)
         val key = "rikkahub_backups/${file.name}"
@@ -66,7 +66,7 @@ class S3Sync(
             .sortedByDescending { it.lastModified }
     }
 
-    suspend fun restoreFromS3(config: S3Config, item: S3BackupItem) = withContext(Dispatchers.IO) {
+    suspend fun restoreFromS3(config: S3Config, item: S3BackupItem, password: String) = withContext(Dispatchers.IO) {
         val client = getS3Client(config)
         val backupFile = File.createTempFile("restore-", ".zip", context.cacheDir)
 
@@ -78,7 +78,7 @@ class S3Sync(
             Log.i(TAG, "restoreFromS3: Downloaded ${backupFile.length().fileSizeToString()}")
 
             // Restore from backup file
-            restoreFromBackupFile(backupFile, config)
+            restoreFromBackupFile(backupFile, config, password)
         } finally {
             // Clean up temp file
             if (backupFile.exists()) {
@@ -94,12 +94,14 @@ class S3Sync(
         Log.i(TAG, "deleteS3BackupFile: Deleted ${item.key}")
     }
 
-    suspend fun prepareBackupFile(config: S3Config): File = backupManager.createBackup(
+    suspend fun prepareBackupFile(config: S3Config, password: String): File = backupManager.createBackup(
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
+        password = password,
+        password = password,
     )
 
-    private suspend fun restoreFromBackupFile(backupFile: File, config: S3Config) = backupManager.stageRestore(
+    private suspend fun restoreFromBackupFile(backupFile: File, config: S3Config, password: String) = backupManager.stageRestore(
         archive = backupFile,
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
