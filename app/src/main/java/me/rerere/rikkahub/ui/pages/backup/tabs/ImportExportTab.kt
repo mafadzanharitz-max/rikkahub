@@ -342,7 +342,7 @@ fun ImportExportTab(
             title = { Text(if (passwordDialogPurpose == "export") "Protect backup" else "Unlock backup") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Use at least 10 characters. The password is not stored by RikkaHub; keep it safe to restore this backup.")
+                    Text("New .rkhb backups need a password of at least 10 characters. Leave blank only for older unencrypted .zip backups. RikkaHub does not store the password.")
                     OutlinedTextField(
                         value = backupPassword,
                         onValueChange = { backupPassword = it },
