@@ -153,6 +153,9 @@ class BackupManagerTest {
         }
         assertTrue(failed)
         assertFalse(File(context.noBackupFilesDir, "backup-restore/pending").exists())
+        assertTrue(context.cacheDir.listFiles().orEmpty().none {
+            it.name.startsWith("restore_plain_") && it.name.endsWith(".zip")
+        })
     }
 
     @Test fun encryptedArchiveRequiresStrongPassphrase() = runBlocking {
