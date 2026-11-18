@@ -161,7 +161,11 @@ internal class McpSessionRegistry(
         val configuredServer = settingsStore.settingsFlow.value.mcpServers
             .find { it.id == serverId }
             ?: throw McpClientUnavailableException("MCP server $serverId is no longer configured")
-        requireSecureMcpEndpoint(configuredServer.serverUrl)
+        try {
+            requireSecureMcpEndpoint(configuredServer.serverUrl)
+        } catch (e: IllegalArgumentException) {
+            throw McpClientUnavailableException(e.message ?: "MCP endpoint is not secure")
+        }
         if (!configuredServer.commonOptions.enable || configuredServer.commonOptions.name.isBlank()) {
             throw McpClientUnavailableException("MCP server $serverId is disabled")
         }
@@ -263,7 +267,12 @@ internal class McpSessionRegistry(
                 session.reconnectAttempt = 0
             }
 
-            requireSecureMcpEndpoint(requestedConfig.serverUrl)
+            try {
+                requireSecureMcpEndpoint(requestedConfig.serverUrl)
+            } catch (e: IllegalArgumentException) {
+                statusStore.update(requestedConfig.id, McpStatus.Error.from(e))
+                return@withLock ConnectResult.Failed
+            }
             val config = oauthCoordinator.ensureFreshToken(session.config)
             session.config = config
             if (!forceReconnect &&
