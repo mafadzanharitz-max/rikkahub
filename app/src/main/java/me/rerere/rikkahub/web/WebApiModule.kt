@@ -61,8 +61,6 @@ fun Application.configureWebApi(
     settingsStore: SettingsStore,
     filesManager: FilesManager
 ) {
-    val jwtEnabled = settingsStore.settingsFlow.value.webServerJwtEnabled
-
     install(ContentNegotiation) {
         json(JsonInstant)
     }
@@ -82,41 +80,40 @@ fun Application.configureWebApi(
         }
     }
 
-    if (jwtEnabled) {
-        install(Authentication) {
-            provider(WEB_AUTH_PROVIDER) {
-                authenticate { context ->
-                    // Dynamically read the current password on each request so that
-                    // tokens signed after a password change are validated correctly.
-                    val currentPassword = settingsStore.settingsFlow.value.webServerAccessPassword
-                    val token = extractAccessToken(
-                        authorizationHeader = context.call.request.headers[HttpHeaders.Authorization],
-                        queryToken = context.call.request.queryParameters[WEB_ACCESS_TOKEN_QUERY_KEY]
-                    )
-                    // Keep protected routes closed when jwt is enabled but password is missing.
-                    if (token != null && currentPassword.isNotBlank() && verifyWebJwt(token, currentPassword)) {
-                        context.principal(WEB_AUTH_PROVIDER, UserIdPrincipal(WEB_JWT_SUBJECT))
-                        return@authenticate
-                    }
-                    val cause = if (token == null) {
-                        AuthenticationFailedCause.NoCredentials
+    // Keep the authentication provider installed for the server lifetime, but read the
+    // current policy on every request. Toggling JWT must never leave routes in a stale mode.
+    install(Authentication) {
+        provider(WEB_AUTH_PROVIDER) {
+            authenticate { authContext ->
+                val settings = settingsStore.settingsFlow.value
+                if (!settings.webServerJwtEnabled) {
+                    authContext.principal(WEB_AUTH_PROVIDER, UserIdPrincipal(WEB_JWT_SUBJECT))
+                    return@authenticate
+                }
+                val currentPassword = settings.webServerAccessPassword
+                val token = extractAccessToken(
+                    authorizationHeader = authContext.call.request.headers[HttpHeaders.Authorization],
+                    queryToken = authContext.call.request.queryParameters[WEB_ACCESS_TOKEN_QUERY_KEY]
+                )
+                if (token != null && currentPassword.isNotBlank() && verifyWebJwt(token, currentPassword)) {
+                    authContext.principal(WEB_AUTH_PROVIDER, UserIdPrincipal(WEB_JWT_SUBJECT))
+                    return@authenticate
+                }
+                val cause = if (token == null) AuthenticationFailedCause.NoCredentials
+                else AuthenticationFailedCause.InvalidCredentials
+                authContext.challenge(WEB_AUTH_PROVIDER, cause) { challenge, call ->
+                    if (currentPassword.isBlank()) {
+                        call.respond(
+                            HttpStatusCode.Forbidden,
+                            ErrorResponse("Access password is not configured", HttpStatusCode.Forbidden.value)
+                        )
                     } else {
-                        AuthenticationFailedCause.InvalidCredentials
+                        call.respond(
+                            HttpStatusCode.Unauthorized,
+                            ErrorResponse("Unauthorized", HttpStatusCode.Unauthorized.value)
+                        )
                     }
-                    context.challenge(WEB_AUTH_PROVIDER, cause) { challenge, call ->
-                        if (currentPassword.isBlank()) {
-                            call.respond(
-                                HttpStatusCode.Forbidden,
-                                ErrorResponse("Access password is not configured", HttpStatusCode.Forbidden.value)
-                            )
-                        } else {
-                            call.respond(
-                                HttpStatusCode.Unauthorized,
-                                ErrorResponse("Unauthorized", HttpStatusCode.Unauthorized.value)
-                            )
-                        }
-                        challenge.complete()
-                    }
+                    challenge.complete()
                 }
             }
         }
@@ -152,16 +149,7 @@ fun Application.configureWebApi(
 
             aiIconRoutes(context)
 
-            if (jwtEnabled) {
-                authenticate(WEB_AUTH_PROVIDER) {
-                    conversationRoutes(chatService, conversationRepo, folderRepo, settingsStore)
-                    folderRoutes(chatService, folderRepo, settingsStore)
-                    eventsRoutes(chatService, conversationRepo, folderRepo, settingsStore)
-                    settingsRoutes(settingsStore)
-                    filesRoutes(filesManager, context)
-                    assetsRoutes(context)
-                }
-            } else {
+            authenticate(WEB_AUTH_PROVIDER) {
                 conversationRoutes(chatService, conversationRepo, folderRepo, settingsStore)
                 folderRoutes(chatService, folderRepo, settingsStore)
                 eventsRoutes(chatService, conversationRepo, folderRepo, settingsStore)
