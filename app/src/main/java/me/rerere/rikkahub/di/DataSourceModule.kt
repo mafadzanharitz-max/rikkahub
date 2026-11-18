@@ -187,7 +187,8 @@ val dataSourceModule = module {
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.MINUTES)
             .writeTimeout(120, TimeUnit.SECONDS)
-            .followSslRedirects(true)
+            // Do not forward API keys, OAuth tokens, or backup credentials across HTTPS-to-HTTP redirects.
+            .followSslRedirects(false)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
             .addInterceptor { chain ->
@@ -278,7 +279,8 @@ val dataSourceModule = module {
                     connectTimeout(20, TimeUnit.SECONDS)
                     readTimeout(10, TimeUnit.MINUTES)
                     writeTimeout(120, TimeUnit.SECONDS)
-                    followSslRedirects(true)
+                    // Keep the Ktor/OkHttp transport from downgrading credential-bearing requests.
+                    followSslRedirects(false)
                     followRedirects(true)
                     retryOnConnectionFailure(true)
                 }
