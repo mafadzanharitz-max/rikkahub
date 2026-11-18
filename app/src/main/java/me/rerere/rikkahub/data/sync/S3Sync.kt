@@ -5,6 +5,7 @@ import android.util.Log
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.sync.requireSecureBackupEndpoint
 import me.rerere.rikkahub.data.sync.s3.S3Client
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.utils.fileSizeToString
@@ -19,7 +20,9 @@ class S3Sync(
     private val httpClient: HttpClient,
 ) {
     private fun getS3Client(config: S3Config): S3Client {
-        return S3Client(config, httpClient)
+        val secureConfig = config.withHttpsByDefault()
+        requireSecureBackupEndpoint(secureConfig.endpoint)
+        return S3Client(secureConfig, httpClient)
     }
 
     suspend fun testS3(config: S3Config) = withContext(Dispatchers.IO) {
