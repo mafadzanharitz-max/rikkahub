@@ -53,7 +53,7 @@ class BackupManager(
 
     suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean, password: String): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-        val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
+        val archive = File.createTempFile("backup_${timestamp}_", ".rkhb", context.cacheDir)
         val plaintextArchive = File.createTempFile("backup_plain_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
