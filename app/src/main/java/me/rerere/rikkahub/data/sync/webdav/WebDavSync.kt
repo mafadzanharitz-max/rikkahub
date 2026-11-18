@@ -29,7 +29,7 @@ class WebDavSync(
         Log.i(TAG, "testConnection: Connection successful")
     }
 
-    suspend fun backup(config: WebDavConfig) = withContext(Dispatchers.IO) {
+    suspend fun backup(config: WebDavConfig, password: String) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(config)
         val client = getClient(config)
 
@@ -70,7 +70,7 @@ class WebDavSync(
             .sortedByDescending { it.lastModified }
     }
 
-    suspend fun restore(config: WebDavConfig, item: WebDavBackupItem) = withContext(Dispatchers.IO) {
+    suspend fun restore(config: WebDavConfig, item: WebDavBackupItem, password: String) = withContext(Dispatchers.IO) {
         val client = getClient(config)
         val backupFile = File.createTempFile("restore-", ".zip", context.cacheDir)
 
@@ -82,7 +82,7 @@ class WebDavSync(
             Log.i(TAG, "restore: Downloaded ${backupFile.length().fileSizeToString()}")
 
             // Restore from backup file
-            restoreFromBackupFile(backupFile, config)
+            restoreFromBackupFile(backupFile, config, password)
         } finally {
             // Clean up temp file
             if (backupFile.exists()) {
@@ -98,16 +98,18 @@ class WebDavSync(
         Log.i(TAG, "deleteBackupFile: Deleted ${item.displayName}")
     }
 
-    suspend fun restoreFromLocalFile(file: File, config: WebDavConfig) {
-        restoreFromBackupFile(file, config)
+    suspend fun restoreFromLocalFile(file: File, config: WebDavConfig, password: String) {
+        restoreFromBackupFile(file, config, password)
     }
 
-    suspend fun prepareBackupFile(config: WebDavConfig): File = backupManager.createBackup(
+    suspend fun prepareBackupFile(config: WebDavConfig, password: String): File = backupManager.createBackup(
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
+        password = password,
+        password = password,
     )
 
-    private suspend fun restoreFromBackupFile(backupFile: File, config: WebDavConfig) = backupManager.stageRestore(
+    private suspend fun restoreFromBackupFile(backupFile: File, config: WebDavConfig, password: String) = backupManager.stageRestore(
         archive = backupFile,
         includeDatabase = WebDavConfig.BackupItem.DATABASE in config.items,
         includeFiles = WebDavConfig.BackupItem.FILES in config.items,
