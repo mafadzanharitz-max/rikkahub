@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +58,9 @@ fun ImportExportTab(
     var isRestoring by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
     var deepSeekImportResult by remember { mutableStateOf<DeepSeekImportResult?>(null) }
+    var passwordDialogPurpose by remember { mutableStateOf<String?>(null) }
+    var backupPassword by remember { mutableStateOf("") }
+    var localRestorePassword by remember { mutableStateOf("") }
 
     // 导入类型：local、chatbox、cherry、deepseek
     var importType by remember { mutableStateOf("local") }
@@ -69,7 +74,7 @@ fun ImportExportTab(
                 isExporting = true
                 runCatching {
                     // 导出文件
-                    val exportFile = vm.exportToFile()
+                    val exportFile = vm.exportToFile(localRestorePassword)
 
                     // 复制到用户选择的位置
                     context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
@@ -118,7 +123,7 @@ fun ImportExportTab(
                             }
 
                             // 从临时文件恢复
-                            vm.restoreFromLocalFile(tempFile)
+                            vm.restoreFromLocalFile(tempFile, localRestorePassword)
 
                             // 清理临时文件
                             tempFile.delete()
@@ -221,7 +226,7 @@ fun ImportExportTab(
                     {
                         val timestamp = LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                        createDocumentLauncher.launch("rikkahub_backup_$timestamp.zip")
+                        passwordDialogPurpose = "export"
                     }
                 } else null,
                 headlineContent = { Text(stringResource(R.string.backup_page_local_backup_export)) },
@@ -326,6 +331,48 @@ fun ImportExportTab(
             confirmButton = {
                 TextButton(onClick = { deepSeekImportResult = null }) {
                     Text(stringResource(R.string.confirm))
+                }
+            },
+        )
+    }
+
+    if (passwordDialogPurpose != null) {
+        AlertDialog(
+            onDismissRequest = { passwordDialogPurpose = null; backupPassword = "" },
+            title = { Text(if (passwordDialogPurpose == "export") "Protect backup" else "Unlock backup") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Use at least 10 characters. The password is not stored by RikkaHub; keep it safe to restore this backup.")
+                    OutlinedTextField(
+                        value = backupPassword,
+                        onValueChange = { backupPassword = it },
+                        label = { Text("Backup password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = backupPassword.length >= 10,
+                    onClick = {
+                        if (passwordDialogPurpose == "export") {
+                            localRestorePassword = backupPassword
+                            createDocumentLauncher.launch(
+                                "rikkahub_backup_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".zip"
+                            )
+                        } else {
+                            localRestorePassword = backupPassword
+                            openDocumentLauncher.launch(arrayOf("application/zip"))
+                        }
+                        passwordDialogPurpose = null
+                        backupPassword = ""
+                    }
+                ) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { passwordDialogPurpose = null; backupPassword = "" }) {
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
