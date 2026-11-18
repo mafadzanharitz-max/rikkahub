@@ -53,7 +53,7 @@ class WebServerManager(
     fun start(
         port: Int = 8080,
         serviceName: String = DEFAULT_SERVICE_NAME,
-        localhostOnly: Boolean = false
+        localhostOnly: Boolean = true
     ) {
         if (server != null) {
             Log.w(TAG, "Server already running")
