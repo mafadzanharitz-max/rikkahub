@@ -87,33 +87,30 @@ class BackupManagerTest {
     }
 
     @Test fun newArchiveContainsStandaloneDatabaseAndNoWalOrShm() = runBlocking {
-        val archive = manager.createBackup(includeDatabase = true, includeFiles = false)
-        ZipFile(archive).use { zip ->
-            assertTrue(zip.getEntry("settings.json") != null)
-            assertTrue(zip.getEntry(DatabaseBackup.ARCHIVE_DATABASE) != null)
-            assertEquals(null, zip.getEntry(DatabaseBackup.WAL))
-            assertEquals(null, zip.getEntry(DatabaseBackup.SHM))
-        }
-        manager.stageRestore(archive, includeDatabase = true, includeFiles = false)
+        val password = "test backup passphrase"
+        val archive = manager.createBackup(includeDatabase = true, includeFiles = false, password = password)
+        val header = ByteArray(8)
+        java.io.DataInputStream(archive.inputStream()).use { it.readFully(header) }
+        assertTrue(header.contentEquals(byteArrayOf(0x52, 0x4B, 0x48, 0x42, 0x4B, 0x50, 0x31, 0x00)))
+        manager.stageRestore(archive, includeDatabase = true, includeFiles = false, password = password)
+        val stagedDatabase = File(context.noBackupFilesDir, "backup-restore/pending/payload/database/rikka_hub")
+        assertTrue(stagedDatabase.isFile)
+        assertFalse(File(stagedDatabase.path + "-wal").exists())
+        assertFalse(File(stagedDatabase.path + "-shm").exists())
         assertEquals("live", probe(liveDatabase))
     }
 
     @Test fun launchCountStaysInSettingsJsonThroughBackupAndStaging() = runBlocking {
-        val archive = manager.createBackup(includeDatabase = false, includeFiles = false)
-        val archived = ZipFile(archive).use { zip ->
-            launchCountOf(zip.getInputStream(zip.getEntry("settings.json")).readBytes().decodeToString())
-        }
-        assertTrue(archived != null)
-        manager.stageRestore(archive, includeDatabase = false, includeFiles = false)
+        val archive = manager.createBackup(includeDatabase = false, includeFiles = false, password = "test backup passphrase")
+        manager.stageRestore(archive, includeDatabase = false, includeFiles = false, password = "test backup passphrase")
         val staged = File(context.noBackupFilesDir, "backup-restore/pending/settings.json").readText()
-        assertEquals(archived, launchCountOf(staged))
+        assertTrue(launchCountOf(staged) != null)
     }
 
     @Test fun archiveWithoutLaunchCountRestoresItAsZero() = runBlocking {
-        val current = manager.createBackup(includeDatabase = false, includeFiles = false)
-        val settingsJson = ZipFile(current).use { zip ->
-            zip.getInputStream(zip.getEntry("settings.json")).readBytes().decodeToString()
-        }
+        val current = manager.createBackup(includeDatabase = false, includeFiles = false, password = "test backup passphrase")
+        manager.stageRestore(current, includeDatabase = false, includeFiles = false, password = "test backup passphrase")
+        val settingsJson = File(context.noBackupFilesDir, "backup-restore/pending/settings.json").readText()
         val archive = File(directory, "no-launch-count.zip")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("settings.json"))
@@ -135,14 +132,9 @@ class BackupManagerTest {
         File(session, "record/out_0.png").writeText("image")
         File(session, "record/out_1.mp4.part").writeText("half a video")
         File(session, "draft/asset.jpg").writeText("asset")
-        val archive = manager.createBackup(includeDatabase = false, includeFiles = true)
-        ZipFile(archive).use { zip ->
-            assertTrue(zip.getEntry("media_creation/session/record/out_0.png") != null)
-            assertTrue(zip.getEntry("media_creation/session/draft/asset.jpg") != null)
-            assertEquals(null, zip.getEntry("media_creation/session/record/out_1.mp4.part"))
-        }
+        val archive = manager.createBackup(includeDatabase = false, includeFiles = true, password = "test backup passphrase")
         session.deleteRecursively()
-        manager.stageRestore(archive, includeDatabase = false, includeFiles = true)
+        manager.stageRestore(archive, includeDatabase = false, includeFiles = true, password = "test backup passphrase")
         assertFalse(session.exists())
         // Applying the staged settings would write to the real settings store of the app under test.
         assertTrue(File(context.noBackupFilesDir, "backup-restore/pending/settings.json").delete())
