@@ -209,9 +209,9 @@ private val SAMPLE = Settings(
     quickMessages = listOf(QuickMessage(id = id(13), title = "hi")),
     webServerEnabled = true,
     webServerPort = 9090,
-    webServerJwtEnabled = true,
+    webServerJwtEnabled = false,
     webServerAccessPassword = "secret",
-    webServerLocalhostOnly = true,
+    webServerLocalhostOnly = false,
     backupReminderConfig = BackupReminderConfig(enabled = true),
     sponsorAlertDismissedAt = 7,
 )
