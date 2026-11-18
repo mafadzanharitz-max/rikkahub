@@ -86,31 +86,31 @@ class BackupVM(
         webDavSync.testConnection(settings.value.webDavConfig)
     }
 
-    suspend fun backup() {
-        webDavSync.backup(settings.value.webDavConfig)
+    suspend fun backup(password: String) {
+        webDavSync.backup(settings.value.webDavConfig, password)
         recordBackupTime()
     }
 
-    suspend fun restore(item: WebDavBackupItem) {
-        webDavSync.restore(config = settings.value.webDavConfig, item = item)
+    suspend fun restore(item: WebDavBackupItem, password: String) {
+        webDavSync.restore(config = settings.value.webDavConfig, item = item, password = password)
     }
 
     suspend fun deleteWebDavBackupFile(item: WebDavBackupItem) {
         webDavSync.deleteBackupFile(settings.value.webDavConfig, item)
     }
 
-    suspend fun exportToFile(): File {
+    suspend fun exportToFile(password: String): File {
         val file = webDavSync.prepareBackupFile(
-            settings.value.webDavConfig.copy(items = localBackupItems.value)
+            settings.value.webDavConfig.copy(items = localBackupItems.value), password
         )
         recordBackupTime()
         return file
     }
 
-    suspend fun restoreFromLocalFile(file: File) {
+    suspend fun restoreFromLocalFile(file: File, password: String) {
         webDavSync.restoreFromLocalFile(
             file,
-            settings.value.webDavConfig.copy(items = localBackupItems.value),
+            settings.value.webDavConfig.copy(items = localBackupItems.value), password
         )
     }
 
@@ -237,13 +237,13 @@ class BackupVM(
         s3Sync.testS3(settings.value.s3Config)
     }
 
-    suspend fun backupToS3() {
-        s3Sync.backupToS3(settings.value.s3Config)
+    suspend fun backupToS3(password: String) {
+        s3Sync.backupToS3(settings.value.s3Config, password)
         recordBackupTime()
     }
 
-    suspend fun restoreFromS3(item: S3BackupItem) {
-        s3Sync.restoreFromS3(config = settings.value.s3Config, item = item)
+    suspend fun restoreFromS3(item: S3BackupItem, password: String) {
+        s3Sync.restoreFromS3(config = settings.value.s3Config, item = item, password = password)
     }
 
     suspend fun deleteS3BackupFile(item: S3BackupItem) {
