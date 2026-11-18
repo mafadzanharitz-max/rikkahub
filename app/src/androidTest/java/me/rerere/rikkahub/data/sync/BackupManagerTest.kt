@@ -100,6 +100,27 @@ class BackupManagerTest {
         assertEquals("live", probe(liveDatabase))
     }
 
+    @Test fun encryptedArchiveRejectsIncorrectPassword() = runBlocking {
+        val archive = manager.createBackup(
+            includeDatabase = false,
+            includeFiles = false,
+            password = "correct backup passphrase",
+        )
+        var failed = false
+        try {
+            manager.stageRestore(
+                archive,
+                includeDatabase = false,
+                includeFiles = false,
+                password = "incorrect backup passphrase",
+            )
+        } catch (_: Exception) {
+            failed = true
+        }
+        assertTrue(failed)
+        assertFalse(File(context.noBackupFilesDir, "backup-restore/pending").exists())
+    }
+
     @Test fun launchCountStaysInSettingsJsonThroughBackupAndStaging() = runBlocking {
         val archive = manager.createBackup(includeDatabase = false, includeFiles = false, password = "test backup passphrase")
         manager.stageRestore(archive, includeDatabase = false, includeFiles = false, password = "test backup passphrase")
