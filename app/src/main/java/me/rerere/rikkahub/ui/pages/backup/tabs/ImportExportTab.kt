@@ -69,6 +69,7 @@ fun ImportExportTab(
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
+        if (uri == null) localRestorePassword = ""
         uri?.let { targetUri ->
             scope.launch {
                 isExporting = true
@@ -107,6 +108,7 @@ fun ImportExportTab(
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
+        if (uri == null) localRestorePassword = ""
         uri?.let { sourceUri ->
             scope.launch {
                 isRestoring = true
