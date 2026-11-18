@@ -283,7 +283,7 @@ internal class McpSessionRegistry(
             try {
                 requireSecureMcpEndpoint(requestedConfig.serverUrl)
             } catch (e: IllegalArgumentException) {
-                statusStore.update(requestedConfig.id, McpStatus.Error.from(e))
+                statusStore.update(requestedConfig.id, McpStatus.Error.fromRemote(e))
                 return@withLock ConnectResult.Failed
             }
             val config = oauthCoordinator.ensureFreshToken(session.config)
@@ -333,7 +333,7 @@ internal class McpSessionRegistry(
                     statusStore.update(config.id, McpStatus.NeedsAuthorization)
                     ConnectResult.NeedsAuthorization
                 } else {
-                    statusStore.update(config.id, McpStatus.Error.from(e))
+                    statusStore.update(config.id, McpStatus.Error.fromRemote(e))
                     ConnectResult.Failed
                 }
             }
@@ -368,7 +368,7 @@ internal class McpSessionRegistry(
                     if (oauthCoordinator.needsAuthorization(config, e)) {
                         statusStore.update(config.id, McpStatus.NeedsAuthorization)
                     } else {
-                        statusStore.update(config.id, McpStatus.Error.from(e))
+                        statusStore.update(config.id, McpStatus.Error.fromRemote(e))
                     }
                 }
             }
