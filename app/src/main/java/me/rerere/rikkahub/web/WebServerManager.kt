@@ -121,22 +121,24 @@ class WebServerManager(
     fun stop() {
         _state.value =
             _state.value.copy(isRunning = false, isLoading = true, hostname = null, address = null, error = null)
-        appScope.launch {
-            try {
-                Log.i(TAG, "Stopping web server")
-                server?.stop(1000, 2000)
-                server = null
-                runCatching {
-                    nsdRegistrar.unregister()
-                }.onFailure {
-                    Log.w(TAG, "NSD unregister failed", it)
-                }
-                _state.value = _state.value.copy(isLoading = false)
-                Log.i(TAG, "Web server stopped")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to stop web server", e)
-                _state.value = _state.value.copy(isLoading = false, error = e.message)
+        appScope.launch { stopServerInternal() }
+    }
+
+    private suspend fun stopServerInternal() {
+        try {
+            Log.i(TAG, "Stopping web server")
+            server?.stop(1000, 2000)
+            server = null
+            runCatching {
+                nsdRegistrar.unregister()
+            }.onFailure {
+                Log.w(TAG, "NSD unregister failed", it)
             }
+            _state.value = _state.value.copy(isLoading = false)
+            Log.i(TAG, "Web server stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop web server", e)
+            _state.value = _state.value.copy(isLoading = false, error = e.message)
         }
     }
 
@@ -145,8 +147,19 @@ class WebServerManager(
         serviceName: String = _state.value.serviceName,
         localhostOnly: Boolean = _state.value.localhostOnly
     ) {
-        stop()
-        start(port, serviceName, localhostOnly)
+        // Stop must complete before start checks the server reference. Calling stop()
+        // and start() back-to-back previously raced and could leave old settings active.
+        appScope.launch {
+            _state.value = _state.value.copy(
+                isRunning = false,
+                isLoading = true,
+                hostname = null,
+                address = null,
+                error = null
+            )
+            stopServerInternal()
+            start(port, serviceName, localhostOnly)
+        }
     }
 
     private fun isPortAvailable(port: Int): Boolean {
