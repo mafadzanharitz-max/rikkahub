@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
@@ -45,6 +47,8 @@ class WebServerManager(
     private val filesManager: FilesManager
 ) {
     private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
+    // Serialize lifecycle operations; start/stop intents can arrive while a prior operation is suspended.
+    private val lifecycleMutex = Mutex()
     private val nsdRegistrar = NsdServiceRegistrar(context)
 
     private val _state = MutableStateFlow(WebServerState())
@@ -55,62 +59,54 @@ class WebServerManager(
         serviceName: String = DEFAULT_SERVICE_NAME,
         localhostOnly: Boolean = true
     ) {
+        appScope.launch {
+            lifecycleMutex.withLock {
+                startServerInternal(port, serviceName, localhostOnly)
+            }
+        }
+    }
+
+    private suspend fun startServerInternal(port: Int, serviceName: String, localhostOnly: Boolean) {
         if (server != null) {
             Log.w(TAG, "Server already running")
             return
         }
-
-        appScope.launch {
-            // 仅本机模式绑定回环地址
-            val host = if (localhostOnly) HOST_LOOPBACK else HOST_ALL_INTERFACES
-            val baseState = WebServerState(
-                port = port,
-                serviceName = serviceName,
-                localhostOnly = localhostOnly
-            )
-            try {
-                _state.value = _state.value.copy(isLoading = true)
-                val currentSettings = settingsStore.awaitLoaded()
-                if (!localhostOnly && !currentSettings.webServerJwtEnabled) {
-                    _state.value = baseState.copy(
-                        error = "Enable JWT authentication before exposing the Web Server to the network"
-                    )
-                    return@launch
-                }
-                Log.i(TAG, "Starting web server on $host:$port")
-                if (!isPortAvailable(port)) {
-                    Log.w(TAG, "Port $port is already in use")
-                    _state.value = baseState.copy(error = "Port $port is already in use")
-                    return@launch
-                }
-                server = startWebServer(port = port, host = host) {
-                    configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager)
-                }.start(wait = false)
-
-                _state.value = baseState.copy(isRunning = true)
-                // 仅局域网模式注册 mDNS
-                if (!localhostOnly) {
-                    runCatching {
-                        nsdRegistrar.register(
-                            port = port,
-                            serviceName = serviceName,
-                            onRegistered = { info ->
-                                _state.value = _state.value.copy(
-                                    serviceName = info.serviceName,
-                                    hostname = info.hostname,
-                                    address = info.address.hostAddress
-                                )
-                            }
-                        )
-                    }.onFailure {
-                        Log.w(TAG, "NSD register failed", it)
-                    }
-                }
-                Log.i(TAG, "Web server started successfully on $host:$port")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start web server", e)
-                _state.value = baseState.copy(error = e.message)
+        val host = if (localhostOnly) HOST_LOOPBACK else HOST_ALL_INTERFACES
+        val baseState = WebServerState(port = port, serviceName = serviceName, localhostOnly = localhostOnly)
+        try {
+            _state.value = baseState.copy(isLoading = true)
+            val currentSettings = settingsStore.awaitLoaded()
+            if (!localhostOnly && !currentSettings.webServerJwtEnabled) {
+                _state.value = baseState.copy(
+                    error = "Enable JWT authentication before exposing the Web Server to the network"
+                )
+                return
             }
+            Log.i(TAG, "Starting web server on $host:$port")
+            if (!isPortAvailable(port)) {
+                Log.w(TAG, "Port $port is already in use")
+                _state.value = baseState.copy(error = "Port $port is already in use")
+                return
+            }
+            server = startWebServer(port = port, host = host) {
+                configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager)
+            }.start(wait = false)
+            _state.value = baseState.copy(isRunning = true)
+            if (!localhostOnly) {
+                runCatching {
+                    nsdRegistrar.register(port = port, serviceName = serviceName) { info ->
+                        _state.value = _state.value.copy(
+                            serviceName = info.serviceName,
+                            hostname = info.hostname,
+                            address = info.address.hostAddress
+                        )
+                    }
+                }.onFailure { Log.w(TAG, "NSD register failed", it) }
+            }
+            Log.i(TAG, "Web server started successfully on $host:$port")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start web server", e)
+            _state.value = baseState.copy(error = e.message)
         }
     }
 
@@ -121,7 +117,7 @@ class WebServerManager(
     fun stop() {
         _state.value =
             _state.value.copy(isRunning = false, isLoading = true, hostname = null, address = null, error = null)
-        appScope.launch { stopServerInternal() }
+        appScope.launch { lifecycleMutex.withLock { stopServerInternal() } }
     }
 
     private suspend fun stopServerInternal() {
@@ -150,15 +146,17 @@ class WebServerManager(
         // Stop must complete before start checks the server reference. Calling stop()
         // and start() back-to-back previously raced and could leave old settings active.
         appScope.launch {
-            _state.value = _state.value.copy(
-                isRunning = false,
-                isLoading = true,
-                hostname = null,
-                address = null,
-                error = null
-            )
-            stopServerInternal()
-            start(port, serviceName, localhostOnly)
+            lifecycleMutex.withLock {
+                _state.value = _state.value.copy(
+                    isRunning = false,
+                    isLoading = true,
+                    hostname = null,
+                    address = null,
+                    error = null
+                )
+                stopServerInternal()
+                if (server == null) startServerInternal(port, serviceName, localhostOnly)
+            }
         }
     }
 
