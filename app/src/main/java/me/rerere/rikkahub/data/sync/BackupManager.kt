@@ -34,7 +34,6 @@ import java.io.DataOutputStream
 import java.nio.file.Files
 import java.security.SecureRandom
 import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
@@ -403,22 +402,40 @@ class BackupManager(
             return CipherOutputStream(output, cipher)
         }
 
-        private fun decryptArchive(source: File, target: File, password: String) {
-            DataInputStream(source.inputStream().buffered()).use { input ->
-                val magic = ByteArray(BACKUP_MAGIC.size)
-                input.readFully(magic)
-                require(magic.contentEquals(BACKUP_MAGIC)) { "Unsupported encrypted backup format" }
-                val version = input.readUnsignedByte()
-                require(version == BACKUP_VERSION) { "Unsupported encrypted backup version: $version" }
-                val salt = ByteArray(BACKUP_SALT_BYTES).also(input::readFully)
-                val iv = ByteArray(BACKUP_IV_BYTES).also(input::readFully)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-                    init(Cipher.DECRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
-                    updateAAD(BACKUP_MAGIC + byteArrayOf(version.toByte()))
+        private suspend fun decryptArchive(source: File, target: File, password: String) {
+            try {
+                DataInputStream(source.inputStream().buffered()).use { input ->
+                    val magic = ByteArray(BACKUP_MAGIC.size)
+                    input.readFully(magic)
+                    require(magic.contentEquals(BACKUP_MAGIC)) { "Unsupported encrypted backup format" }
+                    val version = input.readUnsignedByte()
+                    require(version == BACKUP_VERSION) { "Unsupported encrypted backup version: $version" }
+                    val salt = ByteArray(BACKUP_SALT_BYTES).also(input::readFully)
+                    val iv = ByteArray(BACKUP_IV_BYTES).also(input::readFully)
+                    val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                        init(Cipher.DECRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
+                        updateAAD(BACKUP_MAGIC + byteArrayOf(version.toByte()))
+                    }
+
+                    // Do not use CipherInputStream for AEAD verification: some provider/API
+                    // combinations can turn a tag failure into an ordinary end-of-stream.
+                    // Stream update() output to a private temporary file, but never publish/read
+                    // it until doFinal() has authenticated the complete GCM tag successfully.
+                    FileOutputStream(target).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            cipher.update(buffer, 0, count)?.let(output::write)
+                        }
+                        cipher.doFinal().let(output::write)
+                        output.fd.sync()
+                    }
                 }
-                CipherInputStream(input, cipher).use { decrypted ->
-                    target.outputStream().buffered().use { decrypted.copyTo(it) }
-                }
+            } catch (e: Throwable) {
+                target.delete()
+                throw e
             }
         }
 
