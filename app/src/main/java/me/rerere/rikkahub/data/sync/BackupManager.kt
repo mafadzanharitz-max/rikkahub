@@ -126,6 +126,7 @@ class BackupManager(
                     val stagedDatabase = File(payload, "database/${SQLiteConfiguration.DATABASE_NAME}")
                     val stagedWal = File(stagedDatabase.path + "-wal")
                     val seen = mutableSetOf<String>()
+                    var archiveEntryCount = 0
                     var restoredEntries = 0
                     var restoredBytes = 0L
                     val decryptedArchive = File.createTempFile("restore_plain_", ".zip", context.cacheDir)
@@ -144,7 +145,7 @@ class BackupManager(
                     try {
                     ZipFile(archiveToRead).use { zip ->
                         for (entry in zip.entries()) {
-                            require(++restoredEntries <= MAX_RESTORE_ENTRIES) { "Backup contains too many entries" }
+                            require(++archiveEntryCount <= MAX_RESTORE_ENTRIES) { "Backup contains too many entries" }
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
                             val target = when (entry.name) {
@@ -184,6 +185,7 @@ class BackupManager(
                                     output.fd.sync()
                                 }
                             }
+                            restoredEntries++
                         }
                     }
                     require(restoredEntries > 0) { "No selected data found in the backup" }
