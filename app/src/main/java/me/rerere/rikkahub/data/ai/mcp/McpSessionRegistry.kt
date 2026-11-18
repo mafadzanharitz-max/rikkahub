@@ -327,7 +327,8 @@ internal class McpSessionRegistry(
                 throw e
             } catch (e: Exception) {
                 closeClient(sdkClient, config.commonOptions.name)
-                Log.e(TAG, "Failed to connect MCP server ${config.id}", e)
+                // Connection errors can contain remote server response bodies or credential-bearing URLs.
+                Log.e(TAG, "Failed to connect MCP server ${config.id} (${e.javaClass.simpleName})")
                 if (oauthCoordinator.needsAuthorization(config, e)) {
                     statusStore.update(config.id, McpStatus.NeedsAuthorization)
                     ConnectResult.NeedsAuthorization
@@ -407,7 +408,8 @@ internal class McpSessionRegistry(
             requestReconnect(config.id, sdkClient)
         }
         transport.onError { error ->
-            Log.e(TAG, "Transport error for ${config.id}: ${error.message}")
+            // Transport messages may echo remote URLs, headers, or server-provided secrets.
+            Log.e(TAG, "Transport error for ${config.id} (${error.javaClass.simpleName})")
             if (!isSseStreamGiveUpError(error)) requestReconnect(config.id, sdkClient)
         }
     }
