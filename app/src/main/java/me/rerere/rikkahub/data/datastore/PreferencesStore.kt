@@ -64,14 +64,20 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
     val file = context.preferencesDataStoreFile(SETTINGS_STORE_NAME)
     return PreferenceDataStoreFactory.create(
         corruptionHandler = ReplaceFileCorruptionHandler { exception ->
-            // 文件已损坏无法解析, 先留一份原文件用于排查/抢救, 再重建为空
-            Log.e(TAG, "Settings datastore corrupted, resetting", exception)
-            runCatching {
-                file.copyTo(File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}"))
-            }.onFailure {
-                Log.e(TAG, "Failed to backup corrupted settings file", it)
-            }
-            emptyPreferences()
+            // Preserve the unreadable file for recovery, but never replace user settings with
+            // empty defaults: doing so would silently turn corruption into permanent data loss.
+            val preserved = File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}")
+            runCatching { file.copyTo(preserved) }
+                .onSuccess {
+                    Log.e(TAG, "Settings datastore is corrupted; preserved copy at ${preserved.name}", exception)
+                }
+                .onFailure {
+                    Log.e(TAG, "Settings datastore is corrupted and preservation failed", it)
+                }
+            throw CorruptionException(
+                "Settings datastore is corrupted; refusing to reset user data",
+                exception,
+            )
         },
         migrations = listOf(
             PreferenceStoreV1Migration(),
