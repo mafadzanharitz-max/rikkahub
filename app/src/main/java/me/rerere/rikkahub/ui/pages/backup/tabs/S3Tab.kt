@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.sync.S3BackupItem
 import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.s3ConnectionItems
@@ -73,7 +74,7 @@ fun S3Tab(
             }
         },
         onBackup = { passwordDialogPurpose = "backup" },
-
+    ) {
         RemoteBackupStatus(
             lastBackupTime = settings.backupReminderConfig.lastBackupTime,
             filesState = backupItemsState,
@@ -163,7 +164,7 @@ fun S3Tab(
                             scope.launch {
                                 isBackingUp = true
                                 runCatching {
-                                    vm.backupToS3(backupPassword)
+                                    vm.backupToS3(password)
                                     vm.loadS3BackupFileItems()
                                     toaster.show(context.getString(R.string.backup_page_backup_success), type = ToastType.Success)
                                 }.onFailure { err ->
@@ -177,7 +178,7 @@ fun S3Tab(
                             if (item != null) scope.launch {
                                 restoringItemId = item.displayName
                                 runCatching {
-                                    vm.restoreFromS3(item = item, password = backupPassword)
+                                    vm.restoreFromS3(item = item, password = password)
                                     toaster.show(context.getString(R.string.backup_page_restore_success), type = ToastType.Success)
                                     showBackupFiles = false
                                     onShowRestartDialog()
