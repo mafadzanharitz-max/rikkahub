@@ -92,7 +92,10 @@ class ChatToolFactory(
                         description = tool.description ?: "",
                         parameters = { tool.inputSchema },
                         needsApproval = { tool.needsApproval },
-                        execute = { mcpManager.callTool(serverId, tool.name, it.jsonObject) },
+                        execute = { mcpManager.callTool(serverId, tool.name, it.jsonObject, approved = false) },
+                        executeWithApproval = { args, approved ->
+                            mcpManager.callTool(serverId, tool.name, args.jsonObject, approved)
+                        },
                     )
                 )
             }
@@ -107,7 +110,13 @@ class ChatToolFactory(
     private fun withOutputTruncation(tool: Tool): Tool {
         if (tool.name in TOOLS_WITHOUT_OUTPUT_TRUNCATION) return tool
         val execute = tool.execute
-        return tool.copy(execute = { truncateOutput(execute(it)) })
+        val executeWithApproval = tool.executeWithApproval
+        return tool.copy(
+            execute = { truncateOutput(execute(it)) },
+            executeWithApproval = executeWithApproval?.let { approvedExecute ->
+                { args, approved -> truncateOutput(approvedExecute(args, approved)) }
+            },
+        )
     }
 
     private fun truncateOutput(output: List<UIMessagePart>): List<UIMessagePart> {
