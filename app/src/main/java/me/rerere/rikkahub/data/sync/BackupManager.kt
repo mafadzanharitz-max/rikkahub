@@ -25,7 +25,17 @@ import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.MediaCreationFiles
 import java.io.File
 import java.io.FileOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.nio.file.Files
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.CipherOutputStream
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.zip.ZipEntry
@@ -41,13 +51,14 @@ class BackupManager(
 ) {
     private val restoreMutex = Mutex()
 
-    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean): File = withContext(Dispatchers.IO) {
+    suspend fun createBackup(includeDatabase: Boolean, includeFiles: Boolean, password: String): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val archive = File.createTempFile("backup_${timestamp}_", ".zip", context.cacheDir)
+        val plaintextArchive = File.createTempFile("backup_plain_", ".zip", context.cacheDir)
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.awaitLoaded()
-            ZipOutputStream(FileOutputStream(archive)).use { zip ->
+            ZipOutputStream(FileOutputStream(plaintextArchive)).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
@@ -75,16 +86,18 @@ class BackupManager(
                     }
                 }
             }
+            encryptArchive(plaintextArchive, archive, password)
             archive
         } catch (e: Throwable) {
             archive.delete()
             throw e
         } finally {
+            plaintextArchive.delete()
             staging.deleteRecursively()
         }
     }
 
-    suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean) =
+    suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean, password: String? = null) =
         withContext(Dispatchers.IO) {
             restoreMutex.withLock {
                 val restore = pendingRestore(context)
@@ -95,7 +108,21 @@ class BackupManager(
                     val stagedWal = File(stagedDatabase.path + "-wal")
                     val seen = mutableSetOf<String>()
                     var restoredEntries = 0
-                    ZipFile(archive).use { zip ->
+                    val decryptedArchive = File.createTempFile("restore_plain_", ".zip", context.cacheDir)
+                    val archiveToRead = try {
+                        if (isEncryptedArchive(archive)) {
+                            require(!password.isNullOrBlank()) { "Backup password is required" }
+                            decryptArchive(archive, decryptedArchive, password)
+                            decryptedArchive
+                        } else {
+                            archive // Legacy ZIP backups remain importable.
+                        }
+                    } catch (e: Throwable) {
+                        decryptedArchive.delete()
+                        throw e
+                    }
+                    try {
+                    ZipFile(archiveToRead).use { zip ->
                         for (entry in zip.entries()) {
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
@@ -145,6 +172,9 @@ class BackupManager(
                     }
                     currentCoroutineContext().ensureActive()
                     restore.publish(staging)
+                    } finally {
+                        if (archiveToRead === decryptedArchive) decryptedArchive.delete()
+                    }
                 } finally {
                     staging.deleteRecursively()
                 }
@@ -175,6 +205,68 @@ class BackupManager(
 
         // 启动次数不在 Settings 里，备份文件里仍放在 settings.json 的这个字段，和旧备份保持一致
         private const val LAUNCH_COUNT_KEY = "launchCount"
+        private val BACKUP_MAGIC = byteArrayOf(0x52, 0x4B, 0x48, 0x42, 0x4B, 0x50, 0x31, 0x00)
+        private const val BACKUP_VERSION = 1
+        private const val BACKUP_KDF_ITERATIONS = 210_000
+        private const val BACKUP_SALT_BYTES = 16
+        private const val BACKUP_IV_BYTES = 12
+        private const val BACKUP_TAG_BITS = 128
+
+        private fun isEncryptedArchive(file: File): Boolean {
+            if (file.length() < BACKUP_MAGIC.size) return false
+            return file.inputStream().use { input ->
+                val header = ByteArray(BACKUP_MAGIC.size)
+                input.read(header) == header.size && header.contentEquals(BACKUP_MAGIC)
+            }
+        }
+
+        private fun backupKey(password: String, salt: ByteArray): javax.crypto.SecretKey {
+            require(password.length >= 10) { "Backup password must contain at least 10 characters" }
+            val spec = PBEKeySpec(password.toCharArray(), salt, BACKUP_KDF_ITERATIONS, 256)
+            return try {
+                val bytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+                SecretKeySpec(bytes, "AES")
+            } finally {
+                spec.clearPassword()
+            }
+        }
+
+        private fun encryptArchive(source: File, target: File, password: String) {
+            val salt = ByteArray(BACKUP_SALT_BYTES).also(SecureRandom()::nextBytes)
+            val iv = ByteArray(BACKUP_IV_BYTES).also(SecureRandom()::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.ENCRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
+                updateAAD(BACKUP_MAGIC + byteArrayOf(BACKUP_VERSION.toByte()))
+            }
+            DataOutputStream(target.outputStream().buffered()).use { output ->
+                output.write(BACKUP_MAGIC)
+                output.writeByte(BACKUP_VERSION)
+                output.write(salt)
+                output.write(iv)
+                CipherOutputStream(output, cipher).use { encrypted ->
+                    source.inputStream().buffered().use { it.copyTo(encrypted) }
+                }
+            }
+        }
+
+        private fun decryptArchive(source: File, target: File, password: String) {
+            DataInputStream(source.inputStream().buffered()).use { input ->
+                val magic = ByteArray(BACKUP_MAGIC.size)
+                input.readFully(magic)
+                require(magic.contentEquals(BACKUP_MAGIC)) { "Unsupported encrypted backup format" }
+                val version = input.readUnsignedByte()
+                require(version == BACKUP_VERSION) { "Unsupported encrypted backup version: $version" }
+                val salt = ByteArray(BACKUP_SALT_BYTES).also(input::readFully)
+                val iv = ByteArray(BACKUP_IV_BYTES).also(input::readFully)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                    init(Cipher.DECRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
+                    updateAAD(BACKUP_MAGIC + byteArrayOf(version.toByte()))
+                }
+                CipherInputStream(input, cipher).use { decrypted ->
+                    target.outputStream().buffered().use { decrypted.copyTo(it) }
+                }
+            }
+        }
 
         private fun Json.encodeSettings(settings: Settings, launchCount: Int): String {
             val fields = encodeToJsonElement(settings).jsonObject + (LAUNCH_COUNT_KEY to JsonPrimitive(launchCount))
