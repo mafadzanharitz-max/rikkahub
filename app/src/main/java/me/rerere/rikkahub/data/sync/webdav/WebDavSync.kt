@@ -40,7 +40,7 @@ class WebDavSync(
         client.put(
             path = file.name,
             file = file,
-            contentType = "application/zip"
+            contentType = "application/octet-stream"
         ).getOrThrow()
 
         Log.i(TAG, "backup: Uploaded ${file.name} (${file.length().fileSizeToString()})")
@@ -58,7 +58,7 @@ class WebDavSync(
         val resources = client.list().getOrThrow()
 
         resources
-            .filter { !it.isCollection && it.displayName.startsWith("backup_") && it.displayName.endsWith(".zip") }
+            .filter { !it.isCollection && it.displayName.startsWith("backup_") && it.displayName.(endsWith(".zip") || it.displayName.endsWith(".rkhb")) }
             .map { resource ->
                 WebDavBackupItem(
                     href = resource.href,
