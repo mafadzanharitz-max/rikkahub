@@ -86,7 +86,7 @@ class BackupManager(
                 if (includeDatabase) {
                     val snapshot = File(staging, SQLiteConfiguration.DATABASE_NAME)
                     DatabaseBackup.createSnapshot(database.openHelper.writableDatabase, snapshot)
-                    rewriteSshCredentials(snapshot, forPortableBackup = true)
+                    rewriteSshCredentials(snapshot, forPortableBackup = true, password = password)
                     addFile(zip, snapshot, DatabaseBackup.ARCHIVE_DATABASE)
                 }
                 if (includeFiles) {
@@ -171,7 +171,7 @@ class BackupManager(
                     require(!stagedWal.exists() || stagedDatabase.exists()) { "Backup WAL has no matching database" }
                     if (stagedDatabase.exists()) {
                         DatabaseBackup.normalize(context, stagedDatabase)
-                        rewriteSshCredentials(stagedDatabase, forPortableBackup = false)
+                        rewriteSshCredentials(stagedDatabase, forPortableBackup = false, password = password)
                         // Reject unsupported schemas before publishing; run supported old migrations on the copy.
                         val room = AppDatabaseFactory.create(context, stagedDatabase.absolutePath)
                         try {
@@ -237,7 +237,7 @@ class BackupManager(
          * Convert them to plaintext only inside the temporary database snapshot, which is
          * immediately streamed into the password-encrypted archive; re-encrypt on restore.
          */
-        private fun rewriteSshCredentials(databaseFile: File, forPortableBackup: Boolean) {
+        private fun rewriteSshCredentials(databaseFile: File, forPortableBackup: Boolean, password: String?) {
             val db = android.database.sqlite.SQLiteDatabase.openDatabase(
                 databaseFile.absolutePath,
                 null,
@@ -272,9 +272,14 @@ class BackupManager(
                         val settings = JsonInstant.decodeFromString<SshWorkspaceSettings>(rawConfig)
                         fun transform(secret: String?): String? = secret?.let { value ->
                             if (forPortableBackup) {
-                                if (value.startsWith("v1:")) SecretCipher.decrypt(value) else value
+                                val plaintext = if (value.startsWith("v1:")) SecretCipher.decrypt(value) else value
+                                encryptPortableSshSecret(plaintext, requireNotNull(password))
+                            } else if (value.startsWith(PORTABLE_SSH_PREFIX)) {
+                                SecretCipher.encrypt(decryptPortableSshSecret(value, requireNotNull(password)))
                             } else {
-                                if (value.startsWith("v1:")) value else SecretCipher.encrypt(value)
+                                // Older backups contain device-bound Keystore ciphertext; preserve it
+                                // so same-device legacy restores continue to work.
+                                value
                             }
                         }
                         val portable = settings.copy(
@@ -303,6 +308,37 @@ class BackupManager(
             } finally {
                 db.close()
             }
+        }
+
+        private const val PORTABLE_SSH_PREFIX = "rkhb-ssh:v1:"
+
+        /**
+         * Protect the snapshot's SSH secrets with the backup passphrase too. This prevents
+         * plaintext credentials from sitting in the temporary SQLite snapshot on disk.
+         */
+        private fun encryptPortableSshSecret(plaintext: String, password: String): String {
+            val salt = ByteArray(BACKUP_SALT_BYTES).also(SecureRandom()::nextBytes)
+            val iv = ByteArray(BACKUP_IV_BYTES).also(SecureRandom()::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.ENCRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
+                updateAAD(PORTABLE_SSH_PREFIX.toByteArray(Charsets.UTF_8))
+            }
+            val encrypted = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+            val payload = salt + iv + encrypted
+            return PORTABLE_SSH_PREFIX + java.util.Base64.getEncoder().encodeToString(payload)
+        }
+
+        private fun decryptPortableSshSecret(value: String, password: String): String {
+            val payload = java.util.Base64.getDecoder().decode(value.removePrefix(PORTABLE_SSH_PREFIX))
+            require(payload.size > BACKUP_SALT_BYTES + BACKUP_IV_BYTES) { "Invalid portable SSH credential" }
+            val salt = payload.copyOfRange(0, BACKUP_SALT_BYTES)
+            val iv = payload.copyOfRange(BACKUP_SALT_BYTES, BACKUP_SALT_BYTES + BACKUP_IV_BYTES)
+            val ciphertext = payload.copyOfRange(BACKUP_SALT_BYTES + BACKUP_IV_BYTES, payload.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.DECRYPT_MODE, backupKey(password, salt), GCMParameterSpec(BACKUP_TAG_BITS, iv))
+                updateAAD(PORTABLE_SSH_PREFIX.toByteArray(Charsets.UTF_8))
+            }
+            return cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
         }
 
         private fun isEncryptedArchive(file: File): Boolean {
