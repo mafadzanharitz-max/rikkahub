@@ -59,7 +59,8 @@ fun Application.configureWebApi(
     conversationRepo: ConversationRepository,
     folderRepo: FolderRepository,
     settingsStore: SettingsStore,
-    filesManager: FilesManager
+    filesManager: FilesManager,
+    localhostOnly: Boolean,
 ) {
     install(ContentNegotiation) {
         json(JsonInstant)
@@ -87,7 +88,17 @@ fun Application.configureWebApi(
             authenticate { authContext ->
                 val settings = settingsStore.settingsFlow.value
                 if (!settings.webServerJwtEnabled) {
-                    authContext.principal(WEB_AUTH_PROVIDER, UserIdPrincipal(WEB_JWT_SUBJECT))
+                    if (localhostOnly) {
+                        authContext.principal(WEB_AUTH_PROVIDER, UserIdPrincipal(WEB_JWT_SUBJECT))
+                    } else {
+                        authContext.challenge(WEB_AUTH_PROVIDER, AuthenticationFailedCause.InvalidCredentials) { challenge, call ->
+                            call.respond(
+                                HttpStatusCode.Forbidden,
+                                ErrorResponse("JWT authentication is required for network access", HttpStatusCode.Forbidden.value)
+                            )
+                            challenge.complete()
+                        }
+                    }
                     return@authenticate
                 }
                 val currentPassword = settings.webServerAccessPassword
