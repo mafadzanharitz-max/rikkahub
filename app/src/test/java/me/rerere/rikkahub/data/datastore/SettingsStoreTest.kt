@@ -125,6 +125,9 @@ class SettingsStoreTest {
         val opened = open()
         val store = opened.store
         store.awaitLoaded()
+        // SettingsStore performs its one-time legacy-secret migration during startup.
+        // Exclude that initialization update from this test's write-coalescing count.
+        opened.disk.writes.set(0)
         val gate = CompletableDeferred<Unit>()
         opened.disk.writeGate = gate
 
