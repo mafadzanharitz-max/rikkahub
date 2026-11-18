@@ -30,7 +30,7 @@ class S3Sync(
     }
 
     suspend fun backupToS3(config: S3Config, password: String) = withContext(Dispatchers.IO) {
-        val file = prepareBackupFile(config)
+        val file = prepareBackupFile(config, password)
         val client = getS3Client(config)
         val key = "rikkahub_backups/${file.name}"
 
@@ -98,13 +98,13 @@ class S3Sync(
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
         password = password,
-        password = password,
     )
 
     private suspend fun restoreFromBackupFile(backupFile: File, config: S3Config, password: String) = backupManager.stageRestore(
         archive = backupFile,
         includeDatabase = S3Config.BackupItem.DATABASE in config.items,
         includeFiles = S3Config.BackupItem.FILES in config.items,
+        password = password,
     )
 
 }
