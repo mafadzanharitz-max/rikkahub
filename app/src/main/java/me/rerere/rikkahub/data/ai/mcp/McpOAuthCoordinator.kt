@@ -277,6 +277,9 @@ internal class McpOAuthCoordinator(
     private suspend fun ensureAuthorizationTargetUnchanged(expected: McpServerConfig) {
         val current = settingsStore.settingsFlow.value.mcpServers.find { it.id == expected.id }
             ?: error("MCP server was removed during OAuth authorization")
+        check(current.commonOptions.enable) {
+            "MCP server was disabled during OAuth authorization"
+        }
         check(sameAuthorizationTarget(expected, current)) {
             "MCP server configuration changed during OAuth authorization"
         }
@@ -286,6 +289,9 @@ internal class McpOAuthCoordinator(
         settingsStore.update { old ->
             val current = old.mcpServers.find { it.id == expected.id }
                 ?: error("MCP server was removed during OAuth authorization")
+            check(current.commonOptions.enable) {
+                "MCP server was disabled during OAuth authorization"
+            }
             check(sameAuthorizationTarget(expected, current)) {
                 "MCP server configuration changed during OAuth authorization"
             }
@@ -302,6 +308,8 @@ internal class McpOAuthCoordinator(
         left::class == right::class &&
             left.serverUrl == right.serverUrl &&
             left.commonOptions.name == right.commonOptions.name &&
+            left.commonOptions.enable == right.commonOptions.enable &&
+            right.commonOptions.enable &&
             left.commonOptions.headers.filter { it.first.isNotBlank() } ==
             right.commonOptions.headers.filter { it.first.isNotBlank() }
 
