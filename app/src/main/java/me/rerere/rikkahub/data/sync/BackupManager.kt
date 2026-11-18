@@ -127,6 +127,7 @@ class BackupManager(
                     val stagedWal = File(stagedDatabase.path + "-wal")
                     val seen = mutableSetOf<String>()
                     var restoredEntries = 0
+                    var restoredBytes = 0L
                     val decryptedArchive = File.createTempFile("restore_plain_", ".zip", context.cacheDir)
                     val archiveToRead = try {
                         if (isEncryptedArchive(archive)) {
@@ -143,6 +144,7 @@ class BackupManager(
                     try {
                     ZipFile(archiveToRead).use { zip ->
                         for (entry in zip.entries()) {
+                            require(++restoredEntries <= MAX_RESTORE_ENTRIES) { "Backup contains too many entries" }
                             currentCoroutineContext().ensureActive()
                             if (entry.isDirectory) continue
                             val target = when (entry.name) {
@@ -158,13 +160,30 @@ class BackupManager(
                             check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) {
                                 "Cannot create backup staging directory"
                             }
+                            require(entry.size < 0 || entry.size <= MAX_RESTORE_ENTRY_BYTES) {
+                                "Backup entry is too large: ${entry.name}"
+                            }
                             zip.getInputStream(entry).use { input ->
                                 FileOutputStream(target).use { output ->
-                                    input.copyTo(output)
+                                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                    var entryBytes = 0L
+                                    while (true) {
+                                        currentCoroutineContext().ensureActive()
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        entryBytes += count
+                                        restoredBytes += count
+                                        require(entryBytes <= MAX_RESTORE_ENTRY_BYTES) {
+                                            "Backup entry is too large: ${entry.name}"
+                                        }
+                                        require(restoredBytes <= MAX_RESTORE_TOTAL_BYTES) {
+                                            "Backup expands beyond the restore size limit"
+                                        }
+                                        output.write(buffer, 0, count)
+                                    }
                                     output.fd.sync()
                                 }
                             }
-                            restoredEntries++
                         }
                     }
                     require(restoredEntries > 0) { "No selected data found in the backup" }
@@ -231,6 +250,9 @@ class BackupManager(
         private const val BACKUP_SALT_BYTES = 16
         private const val BACKUP_IV_BYTES = 12
         private const val BACKUP_TAG_BITS = 128
+        private const val MAX_RESTORE_ENTRIES = 100_000
+        private const val MAX_RESTORE_ENTRY_BYTES = 4L * 1024 * 1024 * 1024
+        private const val MAX_RESTORE_TOTAL_BYTES = 8L * 1024 * 1024 * 1024
 
         /**
          * SSH credentials use a device-bound Android Keystore key in the live database.
