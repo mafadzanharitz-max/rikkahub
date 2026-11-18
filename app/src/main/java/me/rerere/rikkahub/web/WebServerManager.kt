@@ -29,7 +29,7 @@ data class WebServerState(
     val isLoading: Boolean = false,
     val port: Int = 8080,
     val serviceName: String = DEFAULT_SERVICE_NAME,
-    val localhostOnly: Boolean = false,
+    val localhostOnly: Boolean = true,
     val hostname: String? = null,
     val address: String? = null,
     val error: String? = null
