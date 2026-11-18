@@ -1881,4 +1881,5 @@
   <string name="backup_page_import_deepseek_complete">DeepSeek import complete</string>
   <string name="backup_page_import_deepseek_summary">Conversations imported: %1$d\nExisting conversations skipped: %2$d\nEmpty conversations skipped: %3$d\nAttachments missing from the export or unable to be imported: %4$d. Their file names have been kept as placeholders.</string>
   <string name="backup_page_import_deepseek_missing_attachment">[Attachment missing from the export or unable to be imported: %1$s]</string>
+  <string name="setting_provider_page_http_endpoint_warning">Insecure HTTP endpoint: API keys and request data are not encrypted in transit. Use HTTPS unless this is a trusted local development service.</string>
 </resources>
