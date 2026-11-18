@@ -76,16 +76,18 @@ fun ImportExportTab(
                 runCatching {
                     // 导出文件
                     val exportFile = vm.exportToFile(localRestorePassword)
-
-                    // 复制到用户选择的位置
-                    context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                        FileInputStream(exportFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
+                    try {
+                        // 复制到用户选择的位置
+                        val outputStream = requireNotNull(context.contentResolver.openOutputStream(targetUri)) {
+                            "Cannot open the selected backup destination"
                         }
+                        outputStream.use { output ->
+                            FileInputStream(exportFile).use { input -> input.copyTo(output) }
+                        }
+                    } finally {
+                        // 清理临时文件，即使复制失败也不保留归档副本
+                        exportFile.delete()
                     }
-
-                    // 清理临时文件
-                    exportFile.delete()
 
                     toaster.show(
                         context.getString(R.string.backup_page_backup_success),
@@ -119,17 +121,17 @@ fun ImportExportTab(
                             val tempFile =
                                 File(context.cacheDir, "temp_restore_${System.currentTimeMillis()}.zip")
 
-                            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                                FileOutputStream(tempFile).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
+                            try {
+                                val inputStream = requireNotNull(context.contentResolver.openInputStream(sourceUri)) {
+                                    "Cannot read the selected backup file"
                                 }
+                                inputStream.use { input ->
+                                    FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                                }
+                                vm.restoreFromLocalFile(tempFile, localRestorePassword)
+                            } finally {
+                                tempFile.delete()
                             }
-
-                            // 从临时文件恢复
-                            vm.restoreFromLocalFile(tempFile, localRestorePassword)
-
-                            // 清理临时文件
-                            tempFile.delete()
                         }
 
                         "chatbox" -> {
