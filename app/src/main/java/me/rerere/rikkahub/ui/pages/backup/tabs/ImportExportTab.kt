@@ -363,7 +363,7 @@ fun ImportExportTab(
                             )
                         } else {
                             localRestorePassword = backupPassword
-                            openDocumentLauncher.launch(arrayOf("application/zip"))
+                            openDocumentLauncher.launch(arrayOf("application/octet-stream", "application/zip"))
                         }
                         passwordDialogPurpose = null
                         backupPassword = ""
