@@ -74,12 +74,19 @@ class RequestLoggingInterceptor : Interceptor {
             normalized.endsWith("_key")
     }
 
+    private fun isSensitiveQueryParameter(name: String): Boolean {
+        val normalized = name.lowercase().replace('-', '_')
+        return normalized in SENSITIVE_QUERY_PARAMETERS ||
+            SENSITIVE_QUERY_MARKERS.any(normalized::contains) ||
+            normalized.endsWith("_key")
+    }
+
     private fun okhttp3.HttpUrl.redacted(): okhttp3.HttpUrl {
         val builder = newBuilder()
         if (username.isNotEmpty()) builder.username(REDACTED)
         if (password.isNotEmpty()) builder.password(REDACTED)
         queryParameterNames
-            .filter { it.lowercase() in SENSITIVE_QUERY_PARAMETERS }
+            .filter(::isSensitiveQueryParameter)
             .forEach { builder.removeAllQueryParameters(it) }
         return builder.build()
     }
@@ -143,7 +150,19 @@ class RequestLoggingInterceptor : Interceptor {
             "private_key",
             "secret_key",
             "access_key",
-            "x-api-key",
+            "x_api_key",
+        )
+
+        val SENSITIVE_QUERY_MARKERS = listOf(
+            "token",
+            "secret",
+            "password",
+            "credential",
+            "signature",
+            "private_key",
+            "access_key",
+            "refresh_key",
+            "auth",
         )
     }
 }
