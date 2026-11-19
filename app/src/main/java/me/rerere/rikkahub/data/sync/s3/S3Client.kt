@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.sync.s3
 
 import android.util.Log
-import kotlinx.coroutines.CancellationException
 import android.util.Xml
 import io.ktor.client.HttpClient
 import io.ktor.client.request.headers
@@ -28,14 +27,6 @@ import kotlin.time.Duration
 
 private const val TAG = "S3Client"
 
-private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
-    try {
-        Result.success(block())
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
 
 class S3Client(
     private val config: S3Config,

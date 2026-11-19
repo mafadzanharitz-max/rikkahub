@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.sync.webdav
 
 import android.util.Log
-import kotlinx.coroutines.CancellationException
 import android.util.Xml
 import io.ktor.client.HttpClient
 import io.ktor.client.request.basicAuth
@@ -22,6 +21,7 @@ import io.ktor.util.cio.readChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.sync.runCatchingCancellable
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.io.InputStream
@@ -32,14 +32,6 @@ import java.time.format.DateTimeFormatter
 
 private const val TAG = "WebDavClient"
 
-private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
-    try {
-        Result.success(block())
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
 
 class WebDavClient(
     private val config: WebDavConfig,
