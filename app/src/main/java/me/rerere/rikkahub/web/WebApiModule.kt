@@ -5,6 +5,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
+import kotlinx.coroutines.CancellationException
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.AuthenticationFailedCause
@@ -73,7 +74,8 @@ fun Application.configureWebApi(
         exception<ApiException> { call, cause ->
             call.respond(cause.status, ErrorResponse(cause.message, cause.status.value))
         }
-        exception<Throwable> { call, _ ->
+        exception<Throwable> { call, cause ->
+            if (cause is CancellationException) throw cause
             // Exception messages may contain provider responses, request URLs, or credentials.
             // Keep unexpected failures generic at the HTTP boundary.
             call.respond(
