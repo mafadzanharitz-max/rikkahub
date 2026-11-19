@@ -73,10 +73,12 @@ fun Application.configureWebApi(
         exception<ApiException> { call, cause ->
             call.respond(cause.status, ErrorResponse(cause.message, cause.status.value))
         }
-        exception<Throwable> { call, cause ->
+        exception<Throwable> { call, _ ->
+            // Exception messages may contain provider responses, request URLs, or credentials.
+            // Keep unexpected failures generic at the HTTP boundary.
             call.respond(
                 HttpStatusCode.InternalServerError,
-                ErrorResponse(cause.message ?: "Internal server error", 500)
+                ErrorResponse("Internal server error", HttpStatusCode.InternalServerError.value)
             )
         }
     }
