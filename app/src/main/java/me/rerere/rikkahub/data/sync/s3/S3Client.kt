@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync.s3
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import android.util.Xml
 import io.ktor.client.HttpClient
 import io.ktor.client.request.headers
@@ -27,6 +28,15 @@ import kotlin.time.Duration
 
 private const val TAG = "S3Client"
 
+private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
 class S3Client(
     private val config: S3Config,
     private val httpClient: HttpClient,
@@ -36,7 +46,7 @@ class S3Client(
         data: ByteArray,
         contentType: String = "application/octet-stream",
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -56,11 +66,11 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "putObject failed: ${response.status} - $errorBody")
+                Log.e(TAG, "putObject failed: ${response.status}")
                 throw S3Exception("Failed to put object: ${response.status}", errorBody)
             }
 
-            Log.d(TAG, "putObject success: $key")
+            Log.d(TAG, "putObject succeeded")
             Unit
         }
     }
@@ -70,7 +80,7 @@ class S3Client(
         file: File,
         contentType: String = "application/octet-stream",
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val fileSha256 = file.sha256Hex()
             val signed = AwsSignatureV4.sign(
@@ -93,17 +103,17 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "putObject(file) failed: ${response.status} - $errorBody")
+                Log.e(TAG, "putObject(file) failed: ${response.status}")
                 throw S3Exception("Failed to put object: ${response.status}", errorBody)
             }
 
-            Log.d(TAG, "putObject(file) success: $key (${file.length()} bytes)")
+            Log.d(TAG, "putObject(file) succeeded")
             Unit
         }
     }
 
     suspend fun getObject(key: String): Result<ByteArray> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -120,7 +130,7 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "getObject failed: ${response.status} - $errorBody")
+                Log.e(TAG, "getObject failed: ${response.status}")
                 throw S3Exception("Failed to get object: ${response.status}", errorBody)
             }
 
@@ -130,7 +140,7 @@ class S3Client(
     }
 
     suspend fun getObjectStream(key: String): Result<InputStream> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -147,7 +157,7 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "getObjectStream failed: ${response.status} - $errorBody")
+                Log.e(TAG, "getObjectStream failed: ${response.status}")
                 throw S3Exception("Failed to get object stream: ${response.status}", errorBody)
             }
 
@@ -156,7 +166,7 @@ class S3Client(
     }
 
     suspend fun downloadObjectToFile(key: String, targetFile: File): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -174,7 +184,7 @@ class S3Client(
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errorBody = response.bodyAsText()
-                    Log.e(TAG, "downloadObjectToFile failed: ${response.status} - $errorBody")
+                    Log.e(TAG, "downloadObjectToFile failed: ${response.status}")
                     throw S3Exception("Failed to download object: ${response.status}", errorBody)
                 }
 
@@ -190,7 +200,7 @@ class S3Client(
     }
 
     suspend fun deleteObject(key: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -207,17 +217,17 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "deleteObject failed: ${response.status} - $errorBody")
+                Log.e(TAG, "deleteObject failed: ${response.status}")
                 throw S3Exception("Failed to delete object: ${response.status}", errorBody)
             }
 
-            Log.d(TAG, "deleteObject success: $key")
+            Log.d(TAG, "deleteObject succeeded")
             Unit
         }
     }
 
     suspend fun headObject(key: String): Result<S3ObjectMetadata> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val path = "/${key.trimStart('/')}"
             val signed = AwsSignatureV4.sign(
                 config = config,
@@ -252,7 +262,7 @@ class S3Client(
         maxKeys: Int = 1000,
         continuationToken: String? = null,
     ): Result<S3ListResult> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val queryParams = mutableMapOf(
                 "list-type" to "2",
                 "max-keys" to maxKeys.toString(),
@@ -277,7 +287,7 @@ class S3Client(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "listObjects failed: ${response.status} - $errorBody")
+                Log.e(TAG, "listObjects failed: ${response.status}")
                 throw S3Exception("Failed to list objects: ${response.status}", errorBody)
             }
 
