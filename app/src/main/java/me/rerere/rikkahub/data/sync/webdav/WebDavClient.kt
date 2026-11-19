@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync.webdav
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import android.util.Xml
 import io.ktor.client.HttpClient
 import io.ktor.client.request.basicAuth
@@ -31,6 +32,15 @@ import java.time.format.DateTimeFormatter
 
 private const val TAG = "WebDavClient"
 
+private suspend inline fun <T> runCatchingCancellable(crossinline block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
 class WebDavClient(
     private val config: WebDavConfig,
     private val httpClient: HttpClient,
@@ -53,9 +63,9 @@ class WebDavClient(
         data: ByteArray,
         contentType: String = "application/octet-stream",
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "PUT: $url")
+            Log.d(TAG, "PUT request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Put
@@ -69,11 +79,11 @@ class WebDavClient(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "put failed: ${response.status} - $errorBody")
+                Log.e(TAG, "put failed: ${response.status}")
                 throw WebDavException("Failed to put: ${response.status}", response.status.value, errorBody)
             }
 
-            Log.d(TAG, "put success: $path")
+            Log.d(TAG, "PUT succeeded")
             Unit
         }
     }
@@ -83,9 +93,9 @@ class WebDavClient(
         file: File,
         contentType: String = "application/octet-stream",
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "PUT (stream file): $url")
+            Log.d(TAG, "PUT file request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Put
@@ -100,19 +110,19 @@ class WebDavClient(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "put(file) failed: ${response.status} - $errorBody")
+                Log.e(TAG, "put(file) failed: ${response.status}")
                 throw WebDavException("Failed to put file: ${response.status}", response.status.value, errorBody)
             }
 
-            Log.d(TAG, "put(file) success: $path (${file.length()} bytes)")
+            Log.d(TAG, "PUT file succeeded")
             Unit
         }
     }
 
     suspend fun get(path: String): Result<ByteArray> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "GET: $url")
+            Log.d(TAG, "GET request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Get
@@ -121,7 +131,7 @@ class WebDavClient(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "get failed: ${response.status} - $errorBody")
+                Log.e(TAG, "get failed: ${response.status}")
                 throw WebDavException("Failed to get: ${response.status}", response.status.value, errorBody)
             }
 
@@ -131,9 +141,9 @@ class WebDavClient(
     }
 
     suspend fun getStream(path: String): Result<InputStream> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "GET (stream): $url")
+            Log.d(TAG, "GET stream request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Get
@@ -142,7 +152,7 @@ class WebDavClient(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "getStream failed: ${response.status} - $errorBody")
+                Log.e(TAG, "getStream failed: ${response.status}")
                 throw WebDavException("Failed to get stream: ${response.status}", response.status.value, errorBody)
             }
 
@@ -151,9 +161,9 @@ class WebDavClient(
     }
 
     suspend fun downloadToFile(path: String, targetFile: File): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "GET (download to file): $url")
+            Log.d(TAG, "GET download request")
 
             httpClient.prepareRequest(url) {
                 method = HttpMethod.Get
@@ -161,7 +171,7 @@ class WebDavClient(
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errorBody = response.bodyAsText()
-                    Log.e(TAG, "downloadToFile failed: ${response.status} - $errorBody")
+                    Log.e(TAG, "downloadToFile failed: ${response.status}")
                     throw WebDavException("Failed to download: ${response.status}", response.status.value, errorBody)
                 }
 
@@ -182,9 +192,9 @@ class WebDavClient(
     }
 
     suspend fun delete(path: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "DELETE: $url")
+            Log.d(TAG, "DELETE request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Delete
@@ -193,19 +203,19 @@ class WebDavClient(
 
             if (!response.status.isSuccess()) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "delete failed: ${response.status} - $errorBody")
+                Log.e(TAG, "delete failed: ${response.status}")
                 throw WebDavException("Failed to delete: ${response.status}", response.status.value, errorBody)
             }
 
-            Log.d(TAG, "delete success: $path")
+            Log.d(TAG, "DELETE succeeded")
             Unit
         }
     }
 
     suspend fun head(path: String): Result<WebDavResourceInfo> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "HEAD: $url")
+            Log.d(TAG, "HEAD request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod.Head
@@ -228,9 +238,9 @@ class WebDavClient(
     }
 
     suspend fun mkcol(path: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "MKCOL: $url")
+            Log.d(TAG, "MKCOL request")
 
             val response: HttpResponse = httpClient.request(url) {
                 method = HttpMethod("MKCOL")
@@ -240,11 +250,11 @@ class WebDavClient(
             // 201 Created or 405 Method Not Allowed (already exists) are acceptable
             if (!response.status.isSuccess() && response.status != HttpStatusCode.MethodNotAllowed) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "mkcol failed: ${response.status} - $errorBody")
+                Log.e(TAG, "mkcol failed: ${response.status}")
                 throw WebDavException("Failed to create collection: ${response.status}", response.status.value, errorBody)
             }
 
-            Log.d(TAG, "mkcol success: $path")
+            Log.d(TAG, "MKCOL succeeded")
             Unit
         }
     }
@@ -253,9 +263,9 @@ class WebDavClient(
         path: String = "",
         depth: Int = 1,
     ): Result<List<WebDavResourceInfo>> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val url = config.buildUrl(path)
-            Log.d(TAG, "PROPFIND: $url, depth: $depth")
+            Log.d(TAG, "PROPFIND request, depth: $depth")
 
             val propfindBody = """<?xml version="1.0" encoding="UTF-8"?>
                 |<D:propfind xmlns:D="DAV:">
@@ -281,7 +291,7 @@ class WebDavClient(
 
             if (!response.status.isSuccess() && response.status.value != 207) {
                 val errorBody = response.bodyAsText()
-                Log.e(TAG, "propfind failed: ${response.status} - $errorBody")
+                Log.e(TAG, "propfind failed: ${response.status}")
                 throw WebDavException("Failed to propfind: ${response.status}", response.status.value, errorBody)
             }
 
@@ -295,15 +305,15 @@ class WebDavClient(
     }
 
     suspend fun ensureCollectionExists(path: String = ""): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val targetUrl = config.buildUrl(path)
-            Log.d(TAG, "Ensuring collection exists: $targetUrl")
+            Log.d(TAG, "Ensuring remote collection exists")
 
             // Try propfind first to check if it exists
             val propfindResult = propfind(path, depth = 0)
             if (propfindResult.isSuccess) {
-                Log.d(TAG, "Collection already exists: $targetUrl")
-                return@runCatching
+                Log.d(TAG, "Remote collection already exists")
+                return@runCatchingCancellable
             }
 
             // Create collection if not exists
@@ -312,7 +322,7 @@ class WebDavClient(
     }
 
     suspend fun list(path: String = ""): Result<List<WebDavResourceInfo>> = withContext(Dispatchers.IO) {
-        runCatching {
+        runCatchingCancellable {
             val result = propfind(path, depth = 1).getOrThrow()
             // Filter out the parent directory itself (first entry)
             if (result.isNotEmpty()) {
