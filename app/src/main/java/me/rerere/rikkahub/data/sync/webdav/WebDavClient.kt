@@ -78,9 +78,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "put failed: ${response.status}")
-                throw WebDavException("Failed to put: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to put: ${response.status}", response.status.value, "")
             }
 
             Log.d(TAG, "PUT succeeded")
@@ -109,9 +108,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "put(file) failed: ${response.status}")
-                throw WebDavException("Failed to put file: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to put file: ${response.status}", response.status.value, "")
             }
 
             Log.d(TAG, "PUT file succeeded")
@@ -130,9 +128,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "get failed: ${response.status}")
-                throw WebDavException("Failed to get: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to get: ${response.status}", response.status.value, "")
             }
 
             val channel = response.bodyAsChannel()
@@ -151,9 +148,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "getStream failed: ${response.status}")
-                throw WebDavException("Failed to get stream: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to get stream: ${response.status}", response.status.value, "")
             }
 
             response.bodyAsChannel().toInputStream()
@@ -170,9 +166,8 @@ class WebDavClient(
                 basicAuth(config.username, config.password)
             }.execute { response ->
                 if (!response.status.isSuccess()) {
-                    val errorBody = response.bodyAsText()
                     Log.e(TAG, "downloadToFile failed: ${response.status}")
-                    throw WebDavException("Failed to download: ${response.status}", response.status.value, errorBody)
+                    throw WebDavException("Failed to download: ${response.status}", response.status.value, "")
                 }
 
                 val channel = response.bodyAsChannel()
@@ -202,9 +197,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess()) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "delete failed: ${response.status}")
-                throw WebDavException("Failed to delete: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to delete: ${response.status}", response.status.value, "")
             }
 
             Log.d(TAG, "DELETE succeeded")
@@ -249,9 +243,8 @@ class WebDavClient(
 
             // 201 Created or 405 Method Not Allowed (already exists) are acceptable
             if (!response.status.isSuccess() && response.status != HttpStatusCode.MethodNotAllowed) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "mkcol failed: ${response.status}")
-                throw WebDavException("Failed to create collection: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to create collection: ${response.status}", response.status.value, "")
             }
 
             Log.d(TAG, "MKCOL succeeded")
@@ -290,9 +283,8 @@ class WebDavClient(
             }
 
             if (!response.status.isSuccess() && response.status.value != 207) {
-                val errorBody = response.bodyAsText()
                 Log.e(TAG, "propfind failed: ${response.status}")
-                throw WebDavException("Failed to propfind: ${response.status}", response.status.value, errorBody)
+                throw WebDavException("Failed to propfind: ${response.status}", response.status.value, "")
             }
 
             val xmlBody = response.bodyAsText()
