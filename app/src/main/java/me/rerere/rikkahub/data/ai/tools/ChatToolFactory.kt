@@ -125,7 +125,7 @@ class ChatToolFactory(
         if (totalChars <= MAX_TOOL_OUTPUT_CHARS) return output
 
         val fileName = "${Uuid.random()}.txt"
-        Log.i(TAG, "truncateOutput: saving $totalChars chars to $fileName")
+        Log.i(TAG, "Truncated tool output saved to private workspace storage")
         val fullText = textParts.joinToString("\n") { it.text }
         val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
         File(outputDir, fileName).writeText(fullText)
@@ -152,10 +152,7 @@ class ChatToolFactory(
         if (workspaceId.isNullOrBlank()) return emptyList()
         val workspace = workspaceRepository.getById(workspaceId) ?: return emptyList()
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) {
-            Log.d(
-                TAG,
-                "createWorkspaceToolsIfReady: skip workspace tools, workspace=$workspaceId, status=${workspace.shellStatus}"
-            )
+            Log.d(TAG, "Skipping workspace tools because the workspace is not ready")
             return emptyList()
         }
         return createWorkspaceTools(workspaceId, workspaceRepository, cwd, conversationId, backgroundShellManager)
