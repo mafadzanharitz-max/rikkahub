@@ -328,7 +328,7 @@ internal class McpSessionRegistry(
             } catch (e: Exception) {
                 closeClient(sdkClient, config.commonOptions.name)
                 // Connection errors can contain remote server response bodies or credential-bearing URLs.
-                Log.e(TAG, "Failed to connect MCP server ${config.id} (${e.javaClass.simpleName})")
+                Log.e(TAG, "Failed to connect MCP server (${e.javaClass.simpleName})")
                 if (oauthCoordinator.needsAuthorization(config, e)) {
                     statusStore.update(config.id, McpStatus.NeedsAuthorization)
                     ConnectResult.NeedsAuthorization
@@ -382,7 +382,7 @@ internal class McpSessionRegistry(
         connectionConfig: McpServerConfig,
     ): McpServerConfig {
         val serverTools = sdkClient.listTools().tools
-        Log.i(TAG, "Synced ${serverTools.size} tools from ${connectionConfig.id}")
+        Log.i(TAG, "Synchronized MCP tool definitions")
         var updatedConfig = connectionConfig
         settingsStore.update { old ->
             old.copy(
