@@ -42,7 +42,7 @@ class WebDavSync(
                 file = file,
                 contentType = "application/octet-stream"
             ).getOrThrow()
-            Log.i(TAG, "backup: Uploaded ${file.name} (${file.length().fileSizeToString()})")
+            Log.i(TAG, "Backup uploaded (${file.length().fileSizeToString()})")
         } finally {
             file.delete()
         }
@@ -75,7 +75,7 @@ class WebDavSync(
 
         try {
             // Download backup file directly to file to avoid OOM
-            Log.i(TAG, "restore: Downloading ${item.displayName}")
+            Log.i(TAG, "Downloading remote backup")
             client.downloadToFile(item.displayName, backupFile).getOrThrow()
 
             Log.i(TAG, "restore: Downloaded ${backupFile.length().fileSizeToString()}")
@@ -94,7 +94,7 @@ class WebDavSync(
     suspend fun deleteBackupFile(config: WebDavConfig, item: WebDavBackupItem) = withContext(Dispatchers.IO) {
         val client = getClient(config)
         client.delete(item.displayName).getOrThrow()
-        Log.i(TAG, "deleteBackupFile: Deleted ${item.displayName}")
+        Log.i(TAG, "Remote backup deleted")
     }
 
     suspend fun restoreFromLocalFile(file: File, config: WebDavConfig, password: String) {
