@@ -3,6 +3,7 @@ package me.rerere.rikkahub.web
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
@@ -51,7 +52,7 @@ class NsdServiceRegistrar(
                 return@withContext
             }
 
-            Log.i(TAG, "Creating JmDNS with hostname=$serviceName, address=$address")
+            Log.i(TAG, "Creating local mDNS service")
 
             // Create JmDNS instance with custom hostname
             // This will register hostname.local -> IP address
@@ -67,10 +68,7 @@ class NsdServiceRegistrar(
             )
             mdns.registerService(serviceInfo)
 
-            Log.i(
-                TAG,
-                "Service registered: $serviceName.$serviceType port=$port, hostname=$serviceName.local"
-            )
+            Log.i(TAG, "Local mDNS service registered")
 
             onRegistered?.invoke(
                 RegisteredServiceInfo(
@@ -80,8 +78,11 @@ class NsdServiceRegistrar(
                     address = address
                 )
             )
+        } catch (e: CancellationException) {
+            cleanup()
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to register service", e)
+            Log.e(TAG, "Failed to register service (${e.javaClass.simpleName})")
             cleanup()
         }
     }
@@ -95,7 +96,7 @@ class NsdServiceRegistrar(
             jmdns?.unregisterAllServices()
             jmdns?.close()
         }.onFailure {
-            Log.w(TAG, "Failed to close JmDNS", it)
+            Log.w(TAG, "Failed to close mDNS service (${it.javaClass.simpleName})")
         }
         jmdns = null
 
@@ -104,7 +105,7 @@ class NsdServiceRegistrar(
                 multicastLock?.release()
             }
         }.onFailure {
-            Log.w(TAG, "Failed to release multicast lock", it)
+            Log.w(TAG, "Failed to release multicast lock (${it.javaClass.simpleName})")
         }
         multicastLock = null
 
@@ -128,7 +129,7 @@ class NsdServiceRegistrar(
             )
             InetAddress.getByAddress(ipBytes)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to get local IP address", e)
+            Log.e(TAG, "Failed to resolve local network address (${e.javaClass.simpleName})")
             null
         }
     }
