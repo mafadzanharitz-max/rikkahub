@@ -114,6 +114,8 @@ class RequestLoggingInterceptor : Interceptor {
         // sufficient (for example, "anthropic-api-key" or "x-vendor-session-token").
         val SENSITIVE_HEADER_MARKERS = listOf(
             "authorization",
+            "auth",
+            "session",
             "api_key",
             "apikey",
             "token",
@@ -154,6 +156,7 @@ class RequestLoggingInterceptor : Interceptor {
         )
 
         val SENSITIVE_QUERY_MARKERS = listOf(
+            "session",
             "token",
             "secret",
             "password",
