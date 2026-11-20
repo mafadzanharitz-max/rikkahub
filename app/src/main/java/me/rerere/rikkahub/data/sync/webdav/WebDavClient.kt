@@ -406,7 +406,7 @@ class WebDavClient(
                     // ISO 8601
                     Instant.parse(dateString)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to parse date: $dateString")
+                    Log.w(TAG, "Failed to parse remote modification date")
                     null
                 }
             }
