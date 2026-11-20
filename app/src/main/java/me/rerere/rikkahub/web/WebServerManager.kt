@@ -94,7 +94,7 @@ class WebServerManager(
             }.start(wait = false)
             _state.value = baseState.copy(isRunning = true)
             if (!localhostOnly) {
-                runCatching {
+                try {
                     nsdRegistrar.register(port = port, serviceName = serviceName) { info ->
                         _state.value = _state.value.copy(
                             serviceName = info.serviceName,
@@ -102,13 +102,17 @@ class WebServerManager(
                             address = info.address.hostAddress
                         )
                     }
-                }.onFailure { Log.w(TAG, "NSD register failed", it) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "NSD registration failed (${e.javaClass.simpleName})")
+                }
             }
             Log.i(TAG, "Web server started successfully on $host:$port")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start web server", e)
+            Log.e(TAG, "Failed to start web server (${e.javaClass.simpleName})")
             _state.value = baseState.copy(error = e.message)
         }
     }
@@ -128,17 +132,19 @@ class WebServerManager(
             Log.i(TAG, "Stopping web server")
             server?.stop(1000, 2000)
             server = null
-            runCatching {
+            try {
                 nsdRegistrar.unregister()
-            }.onFailure {
-                Log.w(TAG, "NSD unregister failed", it)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "NSD unregistration failed (${e.javaClass.simpleName})")
             }
             _state.value = _state.value.copy(isLoading = false)
             Log.i(TAG, "Web server stopped")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop web server", e)
+            Log.e(TAG, "Failed to stop web server (${e.javaClass.simpleName})")
             _state.value = _state.value.copy(isLoading = false, error = e.message)
         }
     }
