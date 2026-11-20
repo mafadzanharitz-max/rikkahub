@@ -72,17 +72,20 @@ class WebServerManager(
             Log.w(TAG, "Server already running")
             return
         }
-        val host = if (localhostOnly) HOST_LOOPBACK else HOST_ALL_INTERFACES
         val baseState = WebServerState(port = port, serviceName = serviceName, localhostOnly = localhostOnly)
+        // The embedded CIO server is HTTP-only. JWT authenticates callers but does not
+        // encrypt credentials or tokens in transit, so remote binding must fail closed
+        // until the Web Server has a supported TLS configuration.
+        if (!localhostOnly) {
+            _state.value = baseState.copy(
+                error = "Network access requires HTTPS; this Web Server currently supports localhost only"
+            )
+            return
+        }
+        val host = HOST_LOOPBACK
         try {
             _state.value = baseState.copy(isLoading = true)
-            val currentSettings = settingsStore.awaitLoaded()
-            if (!localhostOnly && !currentSettings.webServerJwtEnabled) {
-                _state.value = baseState.copy(
-                    error = "Enable JWT authentication before exposing the Web Server to the network"
-                )
-                return
-            }
+            settingsStore.awaitLoaded()
             Log.i(TAG, "Starting web server on $host:$port")
             if (!isPortAvailable(port)) {
                 Log.w(TAG, "Port $port is already in use")
