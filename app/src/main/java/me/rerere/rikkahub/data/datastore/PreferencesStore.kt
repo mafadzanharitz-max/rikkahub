@@ -209,7 +209,7 @@ class SettingsStore internal constructor(
         .retryWhen { cause, attempt ->
             val shouldRetry = cause is IOException && cause !is CorruptionException && attempt < READ_MAX_RETRIES
             if (shouldRetry) {
-                Log.w(TAG, "Failed to read settings, retrying (${attempt + 1}/$READ_MAX_RETRIES)", cause)
+                Log.w(TAG, "Failed to read settings; retrying (${attempt + 1}/$READ_MAX_RETRIES, ${cause.javaClass.simpleName})")
                 delay((100L shl attempt.toInt()).milliseconds)
             }
             shouldRetry
@@ -244,7 +244,7 @@ class SettingsStore internal constructor(
                 throw e
             } catch (e: Throwable) {
                 // 读不出设置就不能带着占位值继续运行：界面上是一份默认设置，而任何修改都落不了盘
-                Log.e(TAG, "Failed to load settings", e)
+                Log.e(TAG, "Failed to load settings (${e.javaClass.simpleName})")
                 Runtime.getRuntime().halt(1)
                 throw e
             }
