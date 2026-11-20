@@ -78,7 +78,7 @@ internal object WebJwt {
 
         val nowSeconds = nowMillis / 1000
         val expiresAt = payload.long("exp") ?: return false
-        if (nowSeconds > expiresAt) return false
+        if (nowSeconds >= expiresAt) return false
         payload.long("iat")?.let { if (nowSeconds < it) return false }
         payload.long("nbf")?.let { if (nowSeconds < it) return false }
         return true
