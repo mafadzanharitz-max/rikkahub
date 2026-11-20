@@ -210,7 +210,7 @@ internal class McpSessionRegistry(
             if (!hasSameConnectionParameters(config, latestServer)) {
                 throw McpClientUnavailableException("MCP server configuration changed before tool execution")
             }
-            Log.i(TAG, "Calling tool $toolName on $serverId (${config.commonOptions.name})")
+            Log.i(TAG, "Executing configured MCP tool request")
             try {
                 sdkClient.callTool(
                     request = CallToolRequest(
@@ -320,7 +320,7 @@ internal class McpSessionRegistry(
                 session.client = sdkClient
                 session.reconnectAttempt = 0
                 statusStore.update(config.id, McpStatus.Connected)
-                Log.i(TAG, "Connected MCP server ${config.id} (${config.commonOptions.name})")
+                Log.i(TAG, "MCP server connection established")
                 ConnectResult.Success
             } catch (e: CancellationException) {
                 closeClient(sdkClient, config.commonOptions.name)
@@ -404,12 +404,12 @@ internal class McpSessionRegistry(
         transport: AbstractTransport,
     ) {
         transport.onClose {
-            Log.i(TAG, "Transport closed for ${config.id} (${config.commonOptions.name})")
+            Log.i(TAG, "MCP transport closed")
             requestReconnect(config.id, sdkClient)
         }
         transport.onError { error ->
             // Transport messages may echo remote URLs, headers, or server-provided secrets.
-            Log.e(TAG, "Transport error for ${config.id} (${error.javaClass.simpleName})")
+            Log.e(TAG, "MCP transport error (${error.javaClass.simpleName})")
             if (!isSseStreamGiveUpError(error)) requestReconnect(config.id, sdkClient)
         }
     }
@@ -498,7 +498,7 @@ internal class McpSessionRegistry(
             throw e
         } catch (e: Exception) {
             // Close failures can contain remote transport details; never persist their messages.
-            Log.w(TAG, "Failed to close MCP client $serverName (${e.javaClass.simpleName})")
+            Log.w(TAG, "Failed to close MCP client (${e.javaClass.simpleName})")
         }
     }
 
