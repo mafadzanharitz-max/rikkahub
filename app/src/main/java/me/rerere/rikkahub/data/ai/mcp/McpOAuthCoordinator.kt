@@ -159,7 +159,7 @@ internal class McpOAuthCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.i(TAG, "Protected resource discovery failed, fallback to server origin (${e.javaClass.simpleName})")
+            Log.i(TAG, "Protected resource discovery failed; using server origin (${e.javaClass.simpleName})")
             null
         }
         val issuer = protectedResource?.authorizationServers?.firstOrNull()
