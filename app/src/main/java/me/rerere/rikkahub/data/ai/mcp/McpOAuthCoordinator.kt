@@ -55,7 +55,7 @@ internal class McpOAuthCoordinator(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "OAuth authorization failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
+                Log.e(TAG, "OAuth authorization failed (${e.javaClass.simpleName})")
                 updateStatus(config.id, McpStatus.Error.fromRemote(e))
             }
         }
@@ -125,7 +125,7 @@ internal class McpOAuthCoordinator(
             } catch (e: Exception) {
                 // Never log server-provided exception messages: OAuth responses may contain
                 // credential material. Also preserve coroutine cancellation semantics.
-                Log.w(TAG, "Token refresh failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
+                Log.w(TAG, "OAuth token refresh failed (${e.javaClass.simpleName})")
                 settingsStore.settingsFlow.value.mcpServers.find { server -> server.id == config.id }
                     ?: config
             }
@@ -143,7 +143,7 @@ internal class McpOAuthCoordinator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.i(TAG, "OAuth probe failed for ${config.commonOptions.name} (${e.javaClass.simpleName})")
+            Log.i(TAG, "OAuth endpoint probe failed (${e.javaClass.simpleName})")
             false
         }
     }
