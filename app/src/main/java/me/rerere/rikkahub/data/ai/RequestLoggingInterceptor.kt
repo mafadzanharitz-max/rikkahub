@@ -43,7 +43,7 @@ class RequestLoggingInterceptor : Interceptor {
         Logging.logRequest(
             LogEntry.RequestLog(
                 tag = "HTTP",
-                url = request.url.redacted().toString(),
+                url = RequestLogRedaction.redactedUrl(request.url),
                 method = request.method,
                 requestHeaders = requestHeaders,
                 requestBody = null,
