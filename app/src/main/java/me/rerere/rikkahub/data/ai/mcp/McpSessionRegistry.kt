@@ -186,6 +186,12 @@ internal class McpSessionRegistry(
         // This closes the race where a server/tool is disabled or its endpoint changes
         // after validation but while a reconnect replaces the active MCP client.
         return session.lifecycleMutex.withLock {
+            // A session can be removed from the registry while this call is waiting for its
+            // lifecycle lock. Never execute through a detached client, even if the same server
+            // ID has since been configured again.
+            if (sessions[serverId] !== session) {
+                throw McpClientUnavailableException("MCP session was replaced before tool execution")
+            }
             val latestServer = settingsStore.settingsFlow.value.mcpServers
                 .find { it.id == serverId }
                 ?: throw McpClientUnavailableException("MCP server $serverId was removed before execution")
