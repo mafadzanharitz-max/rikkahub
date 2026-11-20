@@ -54,6 +54,16 @@ class WebJwtTest {
     }
 
     @Test
+    fun `rejects a token at the exact expiration second`() {
+        val expiresAt = now + 60_000
+        val token = sign(expiresAt = expiresAt)
+
+        assertTrue(verify(token, nowMillis = expiresAt - 1))
+        assertFalse(verify(token, nowMillis = expiresAt))
+        assertFalse(verify(token, nowMillis = expiresAt + 1_000))
+    }
+
+    @Test
     fun `rejects tampered or malformed tokens`() {
         val (header, payload, signature) = sign().split('.')
         val forged = WebJwt.sign(
