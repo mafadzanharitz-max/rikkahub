@@ -20,7 +20,7 @@ class RequestLoggingInterceptor : Interceptor {
 
         val request = chain.request()
         val startTime = System.currentTimeMillis()
-        val requestHeaders = request.headers.redactedMap()
+        val requestHeaders = RequestLogRedaction.redactedMap(request.headers)
 
         val response: Response
         try {
@@ -29,7 +29,7 @@ class RequestLoggingInterceptor : Interceptor {
             Logging.logRequest(
                 LogEntry.RequestLog(
                     tag = "HTTP",
-                    url = request.url.redacted().toString(),
+                    url = RequestLogRedaction.redactedUrl(request.url),
                     method = request.method,
                     requestHeaders = requestHeaders,
                     requestBody = null,
@@ -48,7 +48,7 @@ class RequestLoggingInterceptor : Interceptor {
                 requestHeaders = requestHeaders,
                 requestBody = null,
                 responseCode = response.code,
-                responseHeaders = response.headers.redactedMap(),
+                responseHeaders = RequestLogRedaction.redactedMap(response.headers),
                 durationMs = durationMs,
                 error = null
             )
@@ -57,14 +57,28 @@ class RequestLoggingInterceptor : Interceptor {
         return response
     }
 
-    private fun Headers.redactedMap(): Map<String, String> {
-        return names().associateWith { name ->
-            if (isSensitiveHeader(name)) {
-                REDACTED
-            } else {
-                get(name) ?: ""
-            }
+}
+
+/**
+ * Shared, deterministic redaction helpers kept independently testable so credential
+ * filtering cannot silently regress when request logging changes.
+ */
+internal object RequestLogRedaction {
+    private const val REDACTED = "[REDACTED]"
+
+    fun redactedMap(headers: Headers): Map<String, String> =
+        headers.names().associateWith { name ->
+            if (isSensitiveHeader(name)) REDACTED else headers.get(name) ?: ""
         }
+
+    fun redactedUrl(url: okhttp3.HttpUrl): String {
+        val builder = url.newBuilder()
+        if (url.username.isNotEmpty()) builder.username(REDACTED)
+        if (url.password.isNotEmpty()) builder.password(REDACTED)
+        url.queryParameterNames
+            .filter(::isSensitiveQueryParameter)
+            .forEach { builder.removeAllQueryParameters(it) }
+        return builder.build().toString()
     }
 
     private fun isSensitiveHeader(name: String): Boolean {
@@ -81,91 +95,29 @@ class RequestLoggingInterceptor : Interceptor {
             normalized.endsWith("_key")
     }
 
-    private fun okhttp3.HttpUrl.redacted(): okhttp3.HttpUrl {
-        val builder = newBuilder()
-        if (username.isNotEmpty()) builder.username(REDACTED)
-        if (password.isNotEmpty()) builder.password(REDACTED)
-        queryParameterNames
-            .filter(::isSensitiveQueryParameter)
-            .forEach { builder.removeAllQueryParameters(it) }
-        return builder.build()
-    }
+    private val SENSITIVE_HEADERS = setOf(
+        "authorization", "proxy_authorization", "x_api_key", "api_key",
+        "x_goog_api_key", "cookie", "set_cookie", "x_auth_token",
+        "x_api_token", "x_access_token", "x_refresh_token", "x_csrf_token",
+        "x_amz_security_token",
+    )
 
-    private companion object {
-        const val REDACTED = "[REDACTED]"
+    private val SENSITIVE_HEADER_MARKERS = listOf(
+        "authorization", "auth", "session", "api_key", "apikey", "token",
+        "secret", "password", "credential", "signature", "private_key",
+        "access_key", "refresh_key", "cookie",
+    )
 
-        val SENSITIVE_HEADERS = setOf(
-            "authorization",
-            "proxy-authorization",
-            "x-api-key",
-            "api-key",
-            "x-goog-api-key",
-            "cookie",
-            "set-cookie",
-            "x-auth-token",
-            "x-api-token",
-            "x-access-token",
-            "x-refresh-token",
-            "x-csrf-token",
-            "x-amz-security-token",
-        )
+    private val SENSITIVE_QUERY_PARAMETERS = setOf(
+        "key", "api_key", "apikey", "token", "access_token", "refresh_token",
+        "password", "secret", "signature", "auth", "auth_token",
+        "client_secret", "clientsecret", "id_token", "jwt", "session",
+        "session_token", "sig", "credential", "private_key", "secret_key",
+        "access_key", "x_api_key",
+    )
 
-        // Custom provider headers are user-defined, so exact-name matching alone is not
-        // sufficient (for example, "anthropic-api-key" or "x-vendor-session-token").
-        val SENSITIVE_HEADER_MARKERS = listOf(
-            "authorization",
-            "auth",
-            "session",
-            "api_key",
-            "apikey",
-            "token",
-            "secret",
-            "password",
-            "credential",
-            "signature",
-            "private_key",
-            "access_key",
-            "refresh_key",
-            "cookie",
-        )
-
-        val SENSITIVE_QUERY_PARAMETERS = setOf(
-            "key",
-            "api_key",
-            "apikey",
-            "token",
-            "access_token",
-            "refresh_token",
-            "password",
-            "secret",
-            "signature",
-            "auth",
-            "auth_token",
-            "client_secret",
-            "clientsecret",
-            "id_token",
-            "jwt",
-            "session",
-            "session_token",
-            "sig",
-            "credential",
-            "private_key",
-            "secret_key",
-            "access_key",
-            "x_api_key",
-        )
-
-        val SENSITIVE_QUERY_MARKERS = listOf(
-            "session",
-            "token",
-            "secret",
-            "password",
-            "credential",
-            "signature",
-            "private_key",
-            "access_key",
-            "refresh_key",
-            "auth",
-        )
-    }
+    private val SENSITIVE_QUERY_MARKERS = listOf(
+        "session", "token", "secret", "password", "credential", "signature",
+        "private_key", "access_key", "refresh_key", "auth",
+    )
 }
