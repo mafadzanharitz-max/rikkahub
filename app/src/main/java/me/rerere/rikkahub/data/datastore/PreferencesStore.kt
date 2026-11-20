@@ -68,10 +68,10 @@ private fun createSettingsDataStore(context: Context): DataStore<Preferences> {
             val preserved = File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}")
             runCatching { file.copyTo(preserved) }
                 .onSuccess {
-                    Log.e(TAG, "Settings datastore is corrupted; preserved copy at ${preserved.name}", exception)
+                    Log.e(TAG, "Settings datastore is corrupted; a recovery copy was preserved")
                 }
                 .onFailure {
-                    Log.e(TAG, "Settings datastore is corrupted and preservation failed", it)
+                    Log.e(TAG, "Settings datastore is corrupted and recovery-copy preservation failed")
                 }
             throw CorruptionException(
                 "Settings datastore is corrupted; refusing to reset user data",
