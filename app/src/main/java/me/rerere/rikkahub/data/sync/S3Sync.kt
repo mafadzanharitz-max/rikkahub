@@ -42,7 +42,7 @@ class S3Sync(
                 file = file,
                 contentType = "application/octet-stream"
             ).getOrThrow()
-            Log.i(TAG, "backupToS3: Uploaded ${file.name} (${file.length().fileSizeToString()})")
+            Log.i(TAG, "Backup uploaded (${file.length().fileSizeToString()})")
         } finally {
             file.delete()
         }
@@ -74,7 +74,7 @@ class S3Sync(
 
         try {
             // Download backup file directly to file to avoid OOM
-            Log.i(TAG, "restoreFromS3: Downloading ${item.displayName}")
+            Log.i(TAG, "Downloading remote backup")
             client.downloadObjectToFile(item.key, backupFile).getOrThrow()
 
             Log.i(TAG, "restoreFromS3: Downloaded ${backupFile.length().fileSizeToString()}")
@@ -93,7 +93,7 @@ class S3Sync(
     suspend fun deleteS3BackupFile(config: S3Config, item: S3BackupItem) = withContext(Dispatchers.IO) {
         val client = getS3Client(config)
         client.deleteObject(item.key).getOrThrow()
-        Log.i(TAG, "deleteS3BackupFile: Deleted ${item.key}")
+        Log.i(TAG, "Remote backup deleted")
     }
 
     suspend fun prepareBackupFile(config: S3Config, password: String): File = backupManager.createBackup(
