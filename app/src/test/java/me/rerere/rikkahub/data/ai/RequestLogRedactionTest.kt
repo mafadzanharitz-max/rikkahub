@@ -33,7 +33,10 @@ class RequestLogRedactionTest {
 
         val redacted = RequestLogRedaction.redactedUrl(url)
 
-        assertTrue(redacted.startsWith("https://[REDACTED]:[REDACTED]@example.com/"))
+        val redactedUrl = redacted.toHttpUrl()
+        assertEquals("[REDACTED]", redactedUrl.username)
+        assertEquals("[REDACTED]", redactedUrl.password)
+        assertTrue(redactedUrl.host == "example.com")
         assertTrue(redacted.contains("model=test"))
         assertFalse(redacted.contains("user"))
         assertFalse(redacted.contains("pass"))
