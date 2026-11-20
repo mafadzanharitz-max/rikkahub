@@ -162,7 +162,7 @@ class S3Client(
                 path = path,
             )
 
-            Log.d(TAG, "GET (download to file): $key")
+            Log.d(TAG, "GET download-to-file request")
 
             httpClient.prepareRequest(signed.url) {
                 method = HttpMethod.Get
