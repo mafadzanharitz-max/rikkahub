@@ -48,6 +48,28 @@ NEW_INSTALL = """        val stagingDir = File(tempDir, "rootfs-staging")
         }
 """
 
+NETWORK_HELPERS = """    /**
+     * RootFS archives are executable filesystem images. Never permit cleartext
+     * transport, including when the user supplies a custom download URL.
+     */
+    internal fun requireHttpsUrl(value: String): URL {
+        val parsed = URL(value)
+        require(parsed.protocol.equals("https", ignoreCase = true) && parsed.host.isNotBlank()) {
+            "RootFS downloads and redirects must use HTTPS"
+        }
+        return parsed
+    }
+
+    internal fun resolveHttpsRedirect(currentUrl: String, location: String): String {
+        require(location.isNotBlank()) { "RootFS redirect omitted its Location header" }
+        val current = requireHttpsUrl(currentUrl)
+        val redirected = URL(current, location)
+        requireHttpsUrl(redirected.toExternalForm())
+        return redirected.toExternalForm()
+    }
+
+"""
+
 HELPERS = """    /**
      * Recover the previous RootFS if the process was interrupted after moving it
      * to the backup directory but before activating the staged replacement.
