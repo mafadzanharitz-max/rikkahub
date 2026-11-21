@@ -32,6 +32,7 @@ internal object BuiltinSkills {
 
         // 先完整解压到临时目录再替换，避免中途失败留下半套文件
         val staging = targetDir.resolveSibling(".${targetDir.name}.staging")
+        val backup = targetDir.resolveSibling(".${targetDir.name}.backup")
         staging.deleteRecursively()
         staging.mkdirs()
         val assets = context.assets
@@ -40,10 +41,27 @@ internal object BuiltinSkills {
         }
         staging.resolve(VERSION_FILE).writeText(stamp)
 
-        targetDir.deleteRecursively()
-        if (!staging.renameTo(targetDir)) {
+        backup.deleteRecursively()
+        var previousMoved = false
+        try {
+            if (targetDir.exists()) {
+                check(targetDir.renameTo(backup)) {
+                    "Failed to preserve existing builtin skills in ${backup.absolutePath}"
+                }
+                previousMoved = true
+            }
+            check(staging.renameTo(targetDir)) {
+                "Failed to move builtin skills into ${targetDir.absolutePath}"
+            }
+            backup.deleteRecursively()
+        } catch (error: Throwable) {
             staging.deleteRecursively()
-            error("Failed to move builtin skills into ${targetDir.absolutePath}")
+            if (previousMoved && backup.exists() && !backup.renameTo(targetDir)) {
+                error.addSuppressed(
+                    IllegalStateException("Failed to restore builtin skills from ${backup.absolutePath}")
+                )
+            }
+            throw error
         }
     }
 
