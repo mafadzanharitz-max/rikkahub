@@ -650,7 +650,7 @@ private fun TextInputRow(
                             onClick = {
                                 isFullScreen = !isFullScreen
                             }) {
-                            Icon(HugeIcons.Fullscreen, null)
+                            Icon(HugeIcons.Fullscreen, stringResource(R.string.text_area_fullscreen_edit))
                         }
                     }
                 }
@@ -770,7 +770,7 @@ private fun QuickMessageButton(
         onClick = {
             expanded = !expanded
         }) {
-        Icon(HugeIcons.Zap, null)
+        Icon(HugeIcons.Zap, stringResource(R.string.extension_selector_tab_quick_messages))
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
