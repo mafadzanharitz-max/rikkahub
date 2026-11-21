@@ -72,7 +72,7 @@ def apply(root):
                         "RootFS extracted files exceed the size limit"
                     }
                     val available = targetDir.usableSpace
-                    require(available == 0L || available >= header.size + MIN_FREE_SPACE_BYTES) {
+                    require(available >= header.size + MIN_FREE_SPACE_BYTES) {
                         "Insufficient storage space to extract RootFS"
                     }
                     extractedBytes += header.size
@@ -127,60 +127,11 @@ def apply(root):
         if (target.exists()) {
             require(target.delete()) { "Unable to replace existing RootFS hardlink entry" }
         }
-        runCatching {
-            Files.createLink(target.toPath(), source.toPath())
-        }.recoverCatching { error ->
-            if (error !is IOException &&
-                error !is UnsupportedOperationException &&
-                error !is SecurityException
-            ) throw error
-            source.copyTo(target, overwrite = false)
-            target.setReadable(source.canRead(), false)
-            target.setWritable(source.canWrite(), true)
-            target.setExecutable(source.canExecute(), false)
-        }.getOrThrow()
+        // Do not fall back to copying: that would duplicate unaccounted storage.
+        Files.createLink(target.toPath(), source.toPath())
     }
 
-''' + s[b:]
-    a = s.find("    private fun File.safeResolve(path: String): File {")
-    b = s.find("    private fun File.applyMode(", a)
-    if a < 0 or b < 0: raise SystemExit("safeResolve helper boundaries changed")
-    s = s[:a] + '''    private fun File.safeResolve(path: String): File {
-        val normalized = normalizeTarPath(path)
-        val root = canonicalFile
-        var current = root
-        val parts = normalized.split('/').filter { it.isNotEmpty() }
-        parts.forEachIndexed { index, part ->
-            current = File(current, part)
-            require(!Files.isSymbolicLink(current.toPath())) {
-                "RootFS archive entry traverses a symlink: $path"
-            }
-            if (index < parts.lastIndex) {
-                require(!current.exists() || current.isDirectory) {
-                    "RootFS archive path has a non-directory parent: $path"
-                }
-            }
-        }
-        val canonical = current.canonicalFile
-        require(canonical.path == root.path ||
-            canonical.path.startsWith(root.path + File.separator)) {
-            "RootFS entry escapes target directory: $path"
-        }
-        return current
-    }
-
-''' + s[b:]
-    s = once(s, '                    TarEntryType.FILE -> {\n                        target.outputStream().use { output ->',
-'''                    TarEntryType.FILE -> {
-                        require(!Files.isSymbolicLink(target.toPath())) {
-                            "Refusing to write a RootFS file through a symlink"
-                        }
-                        if (target.exists()) {
-                            require(target.isFile) { "RootFS file entry conflicts with a directory" }
-                        }
-                        target.outputStream().use { output ->''', "regular file output safety")
-
-    marker = "    private fun InputStream.readTarHeader(): TarHeader? {"
+    private fun InputStream.readTarHeader(): TarHeader? {"
     limited = '''    private class LimitedInputStream(
         private val delegate: InputStream,
         private val limit: Long,
