@@ -62,6 +62,8 @@ jobs:
         run: python3 scripts/ci/apply-overlay.py .
       - name: Apply transactional RootFS installation hardening
         run: python3 scripts/ci/patch-rootfs-transaction.py .
+      - name: Apply bounded RootFS archive extraction hardening
+        run: python3 scripts/ci/patch-rootfs-archive-hardening.py .
       - name: Make an empty fork release feed a clean no-update state
         run: python3 scripts/ci/patch-armv7-updater.py
       - name: Install pinned Android SDK, NDK and CMake
