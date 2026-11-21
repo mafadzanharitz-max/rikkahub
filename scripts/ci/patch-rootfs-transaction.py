@@ -129,9 +129,20 @@ def apply(root: Path) -> None:
     installer = replace_once(installer_path.read_text(), OLD_INSTALL, NEW_INSTALL, str(INSTALLER))
     if "internal fun recoverRootfsBackup(" not in installer:
         marker = "    private fun download(\n"
+        installer = installer.replace(marker, NETWORK_HELPERS + marker, 1)
         if installer.count(marker) != 1:
             raise SystemExit("RootfsInstaller helper insertion point changed")
         installer = installer.replace(marker, HELPERS + marker, 1)
+    download_method = "    private fun download(\n        url: String,\n        target: File,\n        onProgress: (RootfsInstallProgress) -> Unit,\n    ) {\n        var currentUrl = requireHttpsUrl(url).toExternalForm()\n        var redirectCount = 0\n        while (true) {\n            val requestUrl = requireHttpsUrl(currentUrl)\n            val connection = requestUrl.openConnection() as HttpURLConnection\n            connection.connectTimeout = CONNECT_TIMEOUT_MS\n            connection.readTimeout = READ_TIMEOUT_MS\n            connection.instanceFollowRedirects = false\n            try {\n                val code = connection.responseCode\n                if (code == HTTP_MOVED_PERMANENTLY ||\n                    code == HTTP_MOVED_TEMPORARILY ||\n                    code == HTTP_SEE_OTHER ||\n                    code == HTTP_TEMPORARY_REDIRECT ||\n                    code == HTTP_PERMANENT_REDIRECT\n                ) {\n                    require(redirectCount < MAX_REDIRECTS) {\n                        \"RootFS download exceeded the redirect limit\"\n                    }\n                    val location = connection.getHeaderField(\"Location\")\n                    currentUrl = resolveHttpsRedirect(currentUrl, location.orEmpty())\n                    redirectCount++\n                    continue\n                }\n                require(code in 200..299) { \"Rootfs download failed: HTTP $code\" }\n                val totalBytes = connection.contentLengthLong.takeIf { it > 0 }\n                target.parentFile?.mkdirs()\n                connection.inputStream.use { input ->\n                    target.outputStream().use { output ->\n                        val buffer = ByteArray(BUFFER_SIZE)\n                        var bytesRead = 0L\n                        var lastReportBytes = 0L\n                        while (true) {\n                            checkInterrupted()\n                            val read = input.read(buffer)\n                            if (read < 0) break\n                            output.write(buffer, 0, read)\n                            bytesRead += read\n                            if (bytesRead - lastReportBytes >= PROGRESS_STEP_BYTES || bytesRead == totalBytes) {\n                                lastReportBytes = bytesRead\n                                onProgress(\n                                    RootfsInstallProgress(\n                                        stage = RootfsInstallStage.DOWNLOADING,\n                                        bytesRead = bytesRead,\n                                        totalBytes = totalBytes,\n                                    )\n                                )\n                            }\n                        }\n                        if (bytesRead == 0L) {\n                            onProgress(\n                                RootfsInstallProgress(\n                                    stage = RootfsInstallStage.DOWNLOADING,\n                                    bytesRead = 0,\n                                    totalBytes = totalBytes,\n                                )\n                            )\n                        }\n                    }\n                }\n                return\n            } finally {\n                connection.disconnect()\n            }\n        }\n    }\n\n"
+    old_download_start = installer.find("    private fun download(\n")
+    old_download_end = installer.find("    internal fun extractTar(\n", old_download_start)
+    if old_download_start < 0 or old_download_end < 0:
+        raise SystemExit("RootfsInstaller download method insertion point changed")
+    current_download = installer[old_download_start:old_download_end]
+    if "instanceFollowRedirects = true" in current_download:
+        installer = installer[:old_download_start] + download_method + installer[old_download_end:]
+    elif "instanceFollowRedirects = false" not in current_download:
+        raise SystemExit("RootfsInstaller download method has an unknown implementation")
     installer_path.write_text(installer)
 
     tests_path = root / TESTS
@@ -185,6 +196,12 @@ def apply(root: Path) -> None:
         if tests.count(marker) != 1:
             raise SystemExit("RootfsInstallerTest insertion point changed")
         tests = tests.replace(marker, test_methods + marker, 1)
+    network_tests = "    @Test\n    fun rejectsCleartextRootfsUrl() {\n        try {\n            createInstaller().requireHttpsUrl(\"http://example.invalid/rootfs.tar.gz\")\n            throw AssertionError(\"Expected cleartext URL to be rejected\")\n        } catch (expected: IllegalArgumentException) {\n            assertTrue(expected.message.orEmpty().contains(\"HTTPS\"))\n        }\n    }\n\n    @Test\n    fun rejectsHttpsToHttpRedirect() {\n        try {\n            createInstaller().resolveHttpsRedirect(\n                \"https://example.invalid/rootfs.tar.gz\",\n                \"http://mirror.invalid/rootfs.tar.gz\",\n            )\n            throw AssertionError(\"Expected HTTPS downgrade to be rejected\")\n        } catch (expected: IllegalArgumentException) {\n            assertTrue(expected.message.orEmpty().contains(\"HTTPS\"))\n        }\n    }\n\n    @Test\n    fun acceptsRelativeHttpsRedirect() {\n        assertEquals(\n            \"https://example.invalid/mirror/rootfs.tar.gz\",\n            createInstaller().resolveHttpsRedirect(\n                \"https://example.invalid/releases/rootfs.tar.gz\",\n                \"../mirror/rootfs.tar.gz\",\n            ),\n        )\n    }\n\n"
+    if "rejectsCleartextRootfsUrl" not in tests:
+        marker = "    private fun createInstaller()"
+        if tests.count(marker) != 1:
+            raise SystemExit("RootfsInstallerTest network test insertion point changed")
+        tests = tests.replace(marker, network_tests + marker, 1)
     tests_path.write_text(tests)
 
 if __name__ == "__main__":
