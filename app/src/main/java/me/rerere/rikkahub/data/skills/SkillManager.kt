@@ -42,10 +42,12 @@ class SkillManager(
             if (builtinExtracted) return
             runCatching {
                 BuiltinSkills.extractIfNeeded(context, getBuiltinSkillsDir())
+            }.onSuccess {
+                builtinExtracted = true
             }.onFailure {
+                // Keep the flag false so a later call can retry after transient I/O failures.
                 Log.w(TAG, "ensureBuiltinSkillsExtracted: Failed to extract builtin skills", it)
             }
-            builtinExtracted = true
         }
     }
 
