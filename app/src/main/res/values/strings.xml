@@ -1264,7 +1264,7 @@
   <string name="workspace_page_name_duplicate">Name already exists</string>
   <string name="setting_mcp_page_name_invalid">Name can only contain English letters and numbers</string>
   <string name="log_page_record_requests">Record requests</string>
-  <string name="log_page_record_requests_desc">Capture request headers, bodies, and response metadata</string>
+  <string name="log_page_record_requests_desc">Capture request headers and response metadata. Request bodies are omitted to protect sensitive content.</string>
   <string name="chat_message_tool_recent_chats">View recent chats</string>
   <string name="chat_message_tool_conversation_search">Search history: %1$s</string>
   <string name="assistant_page_local_tools_screen_time_title">Screen Time</string>
