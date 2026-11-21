@@ -30,7 +30,7 @@ class RequestLogRedactorTest {
 
     @Test
     fun `redacts user info and sensitive query parameters`() {
-        val url = "https://user:password@example.com/v1/chat?api_key=api-secret&access_token=token-secret&key=key-secret&model=gpt"
+        val url = "https://user:password@example.com/v1/chat?api_key=api-secret&access_token=token-secret&key=key-secret&X-Amz-Signature=signature-secret&session_id=session-secret&model=gpt"
             .toHttpUrl()
 
         val redacted = RequestLogRedactor.redactUrl(url).toHttpUrl()
@@ -40,11 +40,15 @@ class RequestLogRedactorTest {
         assertEquals(RequestLogRedactor.REDACTED, redacted.queryParameter("api_key"))
         assertEquals(RequestLogRedactor.REDACTED, redacted.queryParameter("access_token"))
         assertEquals(RequestLogRedactor.REDACTED, redacted.queryParameter("key"))
+        assertEquals(RequestLogRedactor.REDACTED, redacted.queryParameter("X-Amz-Signature"))
+        assertEquals(RequestLogRedactor.REDACTED, redacted.queryParameter("session_id"))
         assertEquals("gpt", redacted.queryParameter("model"))
         assertFalse(redacted.toString().contains("password"))
         assertFalse(redacted.toString().contains("api-secret"))
         assertFalse(redacted.toString().contains("token-secret"))
         assertFalse(redacted.toString().contains("key-secret"))
+        assertFalse(redacted.toString().contains("signature-secret"))
+        assertFalse(redacted.toString().contains("session-secret"))
     }
 
     @Test
