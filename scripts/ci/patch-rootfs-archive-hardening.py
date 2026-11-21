@@ -255,7 +255,7 @@ def apply(root):
     fun extractRejectsHardlinkEscape() {
         val archive = tmp.newFile("hardlink-escape.tar.gz")
         GZIPOutputStream(archive.outputStream()).use { out ->
-            out.writeTarEntry("escape", '1', ByteArray(0), linkName = "../../outside")
+            out.writeTarEntry("escape", '1', ByteArray(0), linkName = "../outside")
             out.write(ByteArray(TAR_BLOCK * 2))
         }
         val target = tmp.newFolder("safe-hardlink")
