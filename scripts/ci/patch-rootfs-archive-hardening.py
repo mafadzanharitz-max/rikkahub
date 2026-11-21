@@ -174,6 +174,7 @@ def apply(root):
                         target.outputStream().use { output ->''',
         "regular file output safety")
 
+    marker = "    private fun InputStream.readTarHeader(): TarHeader? {"
     limited = '''    private inner class LimitedInputStream(
         private val delegate: InputStream,
         private val limit: Long,
