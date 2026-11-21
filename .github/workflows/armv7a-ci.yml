@@ -3,6 +3,7 @@ name: ARMv7a 3.3.0 compatibility build
 on:
   push:
     branches:
+      - adaptive-hybrid/implementation
       - port/armv7a-3.3.0
       - security/http-log-redaction
   workflow_dispatch:
