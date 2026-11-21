@@ -73,7 +73,7 @@ jobs:
           PY
       - name: Apply fail-closed ARMv7 source adaptations
         run: python3 scripts/ci/apply-overlay.py .
-      - name: Validate rootfs before transactional replacement
+      - name: Verify rootfs validation hook before transactional replacement
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -81,14 +81,16 @@ jobs:
           path = Path("workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt")
           lines = path.read_text().splitlines()
           matches = [
-              i for i, line in enumerate(lines[:-1])
+              i for i, line in enumerate(lines[:-2])
               if line.strip() == "extractTar(archive, stagingDir, format, onProgress)"
-              and lines[i + 1].strip().startswith("if (backupDir.exists()")
+              and lines[i + 1].strip() == "Armv7Rootfs.validate(stagingDir)"
+              and lines[i + 2].strip().startswith("if (backupDir.exists()")
           ]
           if len(matches) != 1:
-              raise SystemExit(f"Expected one rootfs transaction hook, found {len(matches)}")
-          lines.insert(matches[0] + 1, "            Armv7Rootfs.validate(stagingDir)")
-          path.write_text("\n".join(lines) + "\n")
+              raise SystemExit(
+                  f"Expected exactly one validated rootfs transaction hook, found {len(matches)}"
+              )
+          print("Verified rootfs validation runs after extraction and before backup/replacement.")
           PY
       - name: Install pinned Android SDK, NDK and CMake
         run: python3 scripts/ci/setup-android.py
