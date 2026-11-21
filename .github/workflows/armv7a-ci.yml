@@ -52,8 +52,8 @@ jobs:
 
           script = Path("scripts/ci/apply-overlay.py")
           source = script.read_text()
-          old = 'extractTar(archive, stagingDir, format, onProgress)\\n            if (backupDir.exists()'
-          new = 'extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            if (backupDir.exists()'
+          old = 'extractTar(archive, stagingDir, format, onProgress)\n            if (backupDir.exists()'
+          new = 'extractTar(archive, stagingDir, format, onProgress)\n            Armv7Rootfs.validate(stagingDir)\n            if (backupDir.exists()'
           if source.count(old) != 1:
               raise SystemExit("Pinned overlay rootfs hook no longer matches the expected upstream installer")
           script.write_text(source.replace(old, new, 1))
