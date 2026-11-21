@@ -20,6 +20,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.URI
 
 private const val API_URL = "https://updates.rikka-ai.com/"
 
@@ -65,8 +66,22 @@ class UpdateChecker(
     }.flowOn(Dispatchers.IO)
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
+        // Update metadata is remote input: accept HTTPS URLs only and reject embedded credentials.
+        val safeUrl = runCatching {
+            URI(download.url).also { uri ->
+                require(uri.scheme.equals("https", ignoreCase = true)) {
+                    "Update downloads must use HTTPS"
+                }
+                require(!uri.host.isNullOrBlank() && uri.rawUserInfo == null) {
+                    "Invalid update download URL"
+                }
+            }.toASCIIString()
+        }.getOrElse {
+            Toast.makeText(context, "Invalid update download URL", Toast.LENGTH_SHORT).show()
+            return
+        }
         runCatching {
-            val request = DownloadManager.Request(download.url.toUri()).apply {
+            val request = DownloadManager.Request(safeUrl.toUri()).apply {
                 // 设置下载时通知栏的标题和描述
                 setTitle(download.name)
                 setDescription("正在下载更新包...")
@@ -85,7 +100,7 @@ class UpdateChecker(
             // 你可以保存返回的downloadId到本地，以便后续查询下载进度或状态
         }.onFailure {
             Toast.makeText(context, "Failed to update", Toast.LENGTH_SHORT).show()
-            context.openUrl(download.url) // 跳转到下载页面
+            context.openUrl(safeUrl) // Open the already-validated HTTPS download URL
         }
     }
 }
