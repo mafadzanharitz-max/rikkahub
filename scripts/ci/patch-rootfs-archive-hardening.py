@@ -131,7 +131,49 @@ def apply(root):
         Files.createLink(target.toPath(), source.toPath())
     }
 
-    private fun InputStream.readTarHeader(): TarHeader? {"
+''' + s[b:]
+
+    # Do not traverse a symlink created by an earlier archive entry.
+    a = s.find("    private fun File.safeResolve(path: String): File {")
+    b = s.find("    private fun File.applyMode(", a)
+    if a < 0 or b < 0: raise SystemExit("safeResolve helper boundaries changed")
+    s = s[:a] + '''    private fun File.safeResolve(path: String): File {
+        val normalized = normalizeTarPath(path)
+        val root = canonicalFile
+        var current = root
+        val parts = normalized.split('/').filter { it.isNotEmpty() }
+        parts.forEachIndexed { index, part ->
+            current = File(current, part)
+            require(!Files.isSymbolicLink(current.toPath())) {
+                "RootFS archive entry traverses a symlink: $path"
+            }
+            if (index < parts.lastIndex) {
+                require(!current.exists() || current.isDirectory) {
+                    "RootFS archive path has a non-directory parent: $path"
+                }
+            }
+        }
+        val canonical = current.canonicalFile
+        require(canonical.path == root.path ||
+            canonical.path.startsWith(root.path + File.separator)) {
+            "RootFS entry escapes target directory: $path"
+        }
+        return current
+    }
+
+''' + s[b:]
+
+    s = once(s, '                    TarEntryType.FILE -> {\\n                        target.outputStream().use { output ->',
+'''                    TarEntryType.FILE -> {
+                        require(!Files.isSymbolicLink(target.toPath())) {
+                            "Refusing to write a RootFS file through a symlink"
+                        }
+                        if (target.exists()) {
+                            require(target.isFile) { "RootFS file entry conflicts with a directory" }
+                        }
+                        target.outputStream().use { output ->''',
+        "regular file output safety")
+
     limited = '''    private inner class LimitedInputStream(
         private val delegate: InputStream,
         private val limit: Long,
@@ -169,7 +211,7 @@ def apply(root):
     }
 
 '''
-    if "private class LimitedInputStream(" not in s:
+    if "LimitedInputStream(" not in s:
         if s.count(marker) != 1: raise SystemExit("LimitedInputStream insertion point changed")
         s = s.replace(marker, limited + marker, 1)
     constants = '''        private const val MAX_COMPRESSED_ARCHIVE_BYTES = 512L * 1024 * 1024
