@@ -77,7 +77,12 @@ HELPERS = """    /**
      */
     internal fun activateRootfs(stagingDir: File, linuxDir: File, backupDir: File) {
         check(!backupDir.exists()) { "RootFS backup must be recovered before activation" }
-        val hadPreviousRootfs = linuxDir.exists() && (linuxDir.list()?.isNotEmpty() == true)
+        val existingEntries = if (linuxDir.exists()) {
+            linuxDir.list() ?: error("Unable to inspect existing RootFS directory")
+        } else {
+            emptyArray()
+        }
+        val hadPreviousRootfs = existingEntries.isNotEmpty()
         if (hadPreviousRootfs) {
             check(linuxDir.renameTo(backupDir)) {
                 "Unable to preserve existing RootFS before activation"
