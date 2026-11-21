@@ -252,6 +252,27 @@ def apply(root):
     }
 
     @Test
+    fun extractRejectsOversizedIndividualFile() {
+        val archive = tmp.newFile("oversized.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            val header = ByteArray(TAR_BLOCK)
+            "oversized.bin".toByteArray().copyInto(header, 0)
+            (512L * 1024 * 1024 + 1).toString(8).padStart(11, '0')
+                .toByteArray().copyInto(header, 124)
+            header[156] = '0'.code.toByte()
+            out.write(header)
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("oversized")
+        try {
+            createInstaller().extractTar(archive, target) {}
+            throw AssertionError("Expected oversized file rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertFalse(File(target, "oversized.bin").exists())
+        }
+    }
+
+    @Test
     fun extractRejectsSymlinkEscape() {
         val archive = tmp.newFile("symlink-escape.tar.gz")
         GZIPOutputStream(archive.outputStream()).use { out ->
