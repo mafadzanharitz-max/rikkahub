@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
   <!--
-    Trust user-installed CAs in addition to system CAs so self-hosted providers,
-    MCP servers and search endpoints signed by a private CA work.
-    Cleartext stays allowed here because android:usesCleartextTraffic is ignored
-    once a network security config is present.
+    Keep user-installed CAs available for self-hosted providers and private endpoints.
+    Cleartext is restricted to loopback for the local Web Server and local integrations.
   -->
-  <base-config cleartextTrafficPermitted="true">
+  <base-config cleartextTrafficPermitted="false">
     <trust-anchors>
       <certificates src="system" />
       <certificates src="user" />
     </trust-anchors>
   </base-config>
+
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">127.0.0.1</domain>
+  </domain-config>
 </network-security-config>
