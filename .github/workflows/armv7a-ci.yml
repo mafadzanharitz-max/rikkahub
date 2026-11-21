@@ -79,15 +79,16 @@ jobs:
           from pathlib import Path
 
           path = Path("workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt")
-          source = path.read_text()
-          old = """            extractTar(archive, stagingDir, format, onProgress)
-                      if (backupDir.exists()"""
-          new = """            extractTar(archive, stagingDir, format, onProgress)
-                      Armv7Rootfs.validate(stagingDir)
-                      if (backupDir.exists()"""
-          if source.count(old) != 1:
-              raise SystemExit("Rootfs installer transaction hook changed; refusing unsafe patch")
-          path.write_text(source.replace(old, new, 1))
+          lines = path.read_text().splitlines()
+          matches = [
+              i for i, line in enumerate(lines[:-1])
+              if line.strip() == "extractTar(archive, stagingDir, format, onProgress)"
+              and lines[i + 1].strip().startswith("if (backupDir.exists()")
+          ]
+          if len(matches) != 1:
+              raise SystemExit(f"Expected one rootfs transaction hook, found {len(matches)}")
+          lines.insert(matches[0] + 1, "            Armv7Rootfs.validate(stagingDir)")
+          path.write_text("\n".join(lines) + "\n")
           PY
       - name: Install pinned Android SDK, NDK and CMake
         run: python3 scripts/ci/setup-android.py
