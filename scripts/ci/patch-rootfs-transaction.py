@@ -123,7 +123,7 @@ def apply(root: Path) -> None:
     installer_path = root / INSTALLER
     installer = replace_once(installer_path.read_text(), OLD_INSTALL, NEW_INSTALL, str(INSTALLER))
     if "internal fun recoverRootfsBackup(" not in installer:
-        marker = "    private fun download(\\n"
+        marker = "    private fun download(\n"
         if installer.count(marker) != 1:
             raise SystemExit("RootfsInstaller helper insertion point changed")
         installer = installer.replace(marker, HELPERS + marker, 1)
