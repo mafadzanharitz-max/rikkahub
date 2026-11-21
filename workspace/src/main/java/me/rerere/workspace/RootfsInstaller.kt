@@ -7,6 +7,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URI
 import java.nio.file.Files
 import java.util.Locale
 import java.util.zip.GZIPInputStream
@@ -22,20 +23,49 @@ class RootfsInstaller(
         onProgress: (RootfsInstallProgress) -> Unit = {},
     ) {
         require(url.isNotBlank()) { "Rootfs download url is required" }
+        val parsedUrl = URI(url)
+        require(parsedUrl.scheme.equals("https", ignoreCase = true) &&
+            !parsedUrl.host.isNullOrBlank() && parsedUrl.rawUserInfo == null
+        ) { "Rootfs download URL must be a valid HTTPS URL" }
         manager.ensureWorkspace(root)
         val format = ArchiveFormat.fromUrl(url)
         val tempDir = manager.tempDir(root)
         val archive = File(tempDir, "rootfs.${format.extension}")
         val stagingDir = File(tempDir, "rootfs-staging")
+        val backupDir = File(tempDir, "rootfs-backup")
         val linuxDir = manager.linuxDir(root)
+        var previousMoved = false
+        var newInstalled = false
 
         try {
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
             download(url, archive, onProgress)
             extractTar(archive, stagingDir, format, onProgress)
-            linuxDir.deleteRecursively()
+            backupDir.deleteRecursively()
+            if (linuxDir.exists()) {
+                require(linuxDir.renameTo(backupDir)) {
+                    "Failed to preserve the previous rootfs before replacement"
+                }
+                previousMoved = true
+            }
             require(stagingDir.renameTo(linuxDir)) {
+                "Failed to move rootfs into workspace"
+            }
+            newInstalled = true
+            patcher.patch(linuxDir)
+            backupDir.deleteRecursively()
+            onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
+        } catch (error: Throwable) {
+            if (newInstalled) linuxDir.deleteRecursively()
+            if (previousMoved && backupDir.exists() && !backupDir.renameTo(linuxDir)) {
+                error.addSuppressed(IOException("Failed to restore previous rootfs from " + backupDir.absolutePath))
+            }
+            throw error
+        } finally {
+            archive.delete()
+            stagingDir.deleteRecursively()
+        }
                 "Failed to move rootfs into workspace"
             }
             patcher.patch(linuxDir)
@@ -57,7 +87,10 @@ class RootfsInstaller(
         connection.instanceFollowRedirects = true
         try {
             val code = connection.responseCode
-            require(code in 200..299) { "Rootfs download failed: HTTP $code" }
+            require(connection.url.protocol.equals("https", ignoreCase = true)) {
+                "Rootfs download redirects must remain on HTTPS"
+            }
+            require(code in 200..299) { "Rootfs download failed: HTTP $code" }            require(code in 200..299) { "Rootfs download failed: HTTP $code" }
             val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
             target.parentFile?.mkdirs()
             connection.inputStream.use { input ->
