@@ -163,7 +163,7 @@ def apply(root):
 
 ''' + s[b:]
 
-    s = once(s, '                    TarEntryType.FILE -> {\\n                        target.outputStream().use { output ->',
+    s = once(s, '                    TarEntryType.FILE -> {\n                        target.outputStream().use { output ->',
 '''                    TarEntryType.FILE -> {
                         require(!Files.isSymbolicLink(target.toPath())) {
                             "Refusing to write a RootFS file through a symlink"
