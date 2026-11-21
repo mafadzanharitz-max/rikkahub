@@ -66,14 +66,6 @@ class RootfsInstaller(
             archive.delete()
             stagingDir.deleteRecursively()
         }
-                "Failed to move rootfs into workspace"
-            }
-            patcher.patch(linuxDir)
-            onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
-        } finally {
-            archive.delete()
-            stagingDir.deleteRecursively()
-        }
     }
 
     private fun download(
@@ -90,7 +82,7 @@ class RootfsInstaller(
             require(connection.url.protocol.equals("https", ignoreCase = true)) {
                 "Rootfs download redirects must remain on HTTPS"
             }
-            require(code in 200..299) { "Rootfs download failed: HTTP $code" }            require(code in 200..299) { "Rootfs download failed: HTTP $code" }
+            require(code in 200..299) { "Rootfs download failed: HTTP $code" }
             val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
             target.parentFile?.mkdirs()
             connection.inputStream.use { input ->
