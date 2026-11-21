@@ -74,7 +74,7 @@ fun LogPage() {
                             logs = Logging.getRecentLogs()
                         }
                     ) {
-                        Icon(HugeIcons.Delete01, null)
+                        Icon(HugeIcons.Delete01, stringResource(R.string.delete))
                     }
                 },
                 scrollBehavior = scrollBehavior,
