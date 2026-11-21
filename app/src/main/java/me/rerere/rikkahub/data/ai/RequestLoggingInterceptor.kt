@@ -2,9 +2,10 @@ package me.rerere.rikkahub.data.ai
 
 import me.rerere.common.android.LogEntry
 import me.rerere.common.android.Logging
+import okhttp3.Headers
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
-import okio.Buffer
 
 class RequestLoggingInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -14,61 +15,84 @@ class RequestLoggingInterceptor : Interceptor {
 
         val request = chain.request()
         val startTime = System.currentTimeMillis()
-
-        val requestHeaders = request.headers.toMap()
-        val requestBody = request.body?.let { body ->
-            val buffer = Buffer()
-            body.writeTo(buffer)
-            buffer.readUtf8()
-        }
+        val requestHeaders = RequestLogRedactor.redactHeaders(request.headers)
+        // Request bodies can contain API credentials, conversation content, and large Base64 media.
+        // Keep a marker for diagnostics without serializing or retaining the payload.
+        val requestBody = request.body?.let { RequestLogRedactor.REDACTED_BODY }
 
         val response: Response
-        var error: String? = null
-
         try {
             response = chain.proceed(request)
         } catch (e: Exception) {
-            error = e.message
             Logging.logRequest(
                 LogEntry.RequestLog(
                     tag = "HTTP",
-                    url = request.url.toString(),
+                    url = RequestLogRedactor.redactUrl(request.url),
                     method = request.method,
                     requestHeaders = requestHeaders,
                     requestBody = requestBody,
-                    error = error
+                    error = e.javaClass.simpleName,
                 )
             )
             throw e
         }
 
         val durationMs = System.currentTimeMillis() - startTime
-        val responseHeaders = response.headers.toMap()
+        val responseHeaders = RequestLogRedactor.redactHeaders(response.headers)
 
         Logging.logRequest(
             LogEntry.RequestLog(
                 tag = "HTTP",
-                url = request.url.toString(),
+                url = RequestLogRedactor.redactUrl(request.url),
                 method = request.method,
                 requestHeaders = requestHeaders,
                 requestBody = requestBody,
                 responseCode = response.code,
                 responseHeaders = responseHeaders,
                 durationMs = durationMs,
-                error = error
             )
         )
 
         return response
     }
+}
 
-    private fun okhttp3.Headers.toMap(): Map<String, String> {
-        return names().associateWith { name ->
-            if (name.equals("Proxy-Authorization", ignoreCase = true)) {
-                "██"
+internal object RequestLogRedactor {
+    const val REDACTED = "██"
+    const val REDACTED_BODY = "[omitted: request body may contain sensitive content]"
+
+    private val sensitiveNamePattern = Regex(
+        "(authorization|api[-_]?key|access[-_]?token|auth[-_]?token|client[-_]?secret|secret|password|cookie|token|(?:^|[-_])key(?:$|[-_]))",
+        RegexOption.IGNORE_CASE,
+    )
+
+    internal fun isSensitiveName(name: String): Boolean =
+        sensitiveNamePattern.containsMatchIn(name)
+
+    fun redactHeaders(headers: Headers): Map<String, String> =
+        headers.names().associateWith { name ->
+            if (isSensitiveName(name)) {
+                REDACTED
             } else {
-                get(name) ?: ""
+                headers.values(name).joinToString(", ")
             }
         }
+
+    fun redactUrl(url: HttpUrl): String {
+        val builder = url.newBuilder()
+            .username("")
+            .password("")
+
+        url.queryParameterNames
+            .filter(::isSensitiveName)
+            .forEach { name ->
+                val valueCount = url.queryParameterValues(name).size
+                builder.removeAllQueryParameters(name)
+                repeat(valueCount) {
+                    builder.addQueryParameter(name, REDACTED)
+                }
+            }
+
+        return builder.build().toString()
     }
 }
