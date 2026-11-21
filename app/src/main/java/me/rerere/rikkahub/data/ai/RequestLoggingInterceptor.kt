@@ -62,7 +62,7 @@ internal object RequestLogRedactor {
     const val REDACTED_BODY = "[omitted: request body may contain sensitive content]"
 
     private val sensitiveNamePattern = Regex(
-        "(authorization|api[-_]?key|access[-_]?token|auth[-_]?token|client[-_]?secret|secret|password|cookie|token|(?:^|[-_])key(?:$|[-_]))",
+        "(authorization|api[-_]?key|access[-_]?token|auth[-_]?token|client[-_]?secret|secret|password|cookie|credential|signature|session[-_]?id|jwt|token|(?:^|[-_])auth(?:$|[-_])|(?:^|[-_])sig(?:$|[-_])|(?:^|[-_])key(?:$|[-_]))",
         RegexOption.IGNORE_CASE,
     )
 
@@ -82,6 +82,7 @@ internal object RequestLogRedactor {
         val builder = url.newBuilder()
             .username("")
             .password("")
+            .fragment(null)
 
         url.queryParameterNames
             .filter(::isSensitiveName)
