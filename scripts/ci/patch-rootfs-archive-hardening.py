@@ -132,7 +132,7 @@ def apply(root):
     }
 
     private fun InputStream.readTarHeader(): TarHeader? {"
-    limited = '''    private class LimitedInputStream(
+    limited = '''    private inner class LimitedInputStream(
         private val delegate: InputStream,
         private val limit: Long,
     ) : InputStream() {
