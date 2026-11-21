@@ -27,12 +27,17 @@ internal object BuiltinSkills {
             .getPackageInfo(context.packageName, 0)
             .lastUpdateTime
             .toString()
+        val backup = targetDir.resolveSibling(".${targetDir.name}.backup")
+        if (backup.exists() && !targetDir.exists()) {
+            check(backup.renameTo(targetDir)) {
+                "Failed to recover builtin skills backup from ${backup.absolutePath}"
+            }
+        }
         val versionFile = targetDir.resolve(VERSION_FILE)
         if (versionFile.exists() && versionFile.readText() == stamp) return
 
         // 先完整解压到临时目录再替换，避免中途失败留下半套文件
         val staging = targetDir.resolveSibling(".${targetDir.name}.staging")
-        val backup = targetDir.resolveSibling(".${targetDir.name}.backup")
         staging.deleteRecursively()
         staging.mkdirs()
         val assets = context.assets
