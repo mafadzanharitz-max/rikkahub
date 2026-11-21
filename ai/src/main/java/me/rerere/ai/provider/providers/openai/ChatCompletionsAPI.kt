@@ -107,7 +107,7 @@ class ChatCompletionsAPI(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw me.rerere.ai.provider.ProviderHttpException(response.code)
         }
 
         val bodyStr = response.body?.string() ?: ""
@@ -210,7 +210,7 @@ class ChatCompletionsAPI(
                     e.printStackTrace()
                     exception = e
                 } finally {
-                    close(exception)
+                    close(response?.takeIf { !it.isSuccessful }?.let { me.rerere.ai.provider.ProviderHttpException(it.code, exception) } ?: exception)
                 }
             }
 

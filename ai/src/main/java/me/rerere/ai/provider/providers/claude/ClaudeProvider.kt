@@ -310,7 +310,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw me.rerere.ai.provider.ProviderHttpException(response.code)
         }
 
         val bodyStr = response.body?.string() ?: ""
@@ -408,7 +408,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
-                    close(exception)
+                    close(response?.takeIf { !it.isSuccessful }?.let { me.rerere.ai.provider.ProviderHttpException(it.code, exception) } ?: exception)
                 }
             }
 

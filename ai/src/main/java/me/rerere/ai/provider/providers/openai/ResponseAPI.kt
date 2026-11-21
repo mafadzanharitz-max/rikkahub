@@ -138,7 +138,7 @@ class ResponseAPI(
         // await() waits for the response headers; reading the body can still block.
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+                throw me.rerere.ai.provider.ProviderHttpException(response.code)
             }
 
             val bodyStr = response.body.string()
@@ -212,7 +212,7 @@ class ResponseAPI(
                     Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
                     e.printStackTrace()
                 } finally {
-                    close(exception)
+                    close(response?.takeIf { !it.isSuccessful }?.let { me.rerere.ai.provider.ProviderHttpException(it.code, exception) } ?: exception)
                 }
             }
 
