@@ -238,7 +238,8 @@ private fun AssistantItem(
             ) {
                 Icon(
                     imageVector = HugeIcons.Edit03,
-                    contentDescription = null
+                    contentDescription = stringResource(R.string.edit) + " " +
+                        assistant.name.ifEmpty { defaultAssistantName }
                 )
             }
         },
