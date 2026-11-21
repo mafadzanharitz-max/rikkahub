@@ -188,6 +188,10 @@ def apply(root):
 
     tp = root / TESTS
     tests = tp.read_text()
+    tests = once(tests,
+        '        assertEquals("/bin/busybox", Files.readSymbolicLink(File(target, "bin/sh").toPath()).toString())',
+        '        assertEquals("busybox", Files.readSymbolicLink(File(target, "bin/sh").toPath()).toString())',
+        "RootFS absolute symlink expectation")
     methods = '''    @Test
     fun extractRejectsPathTraversal() {
         val archive = tmp.newFile("traversal.tar.gz")
