@@ -1223,7 +1223,7 @@
   <string name="workspace_page_name_duplicate">Name existiert bereits</string>
   <string name="setting_mcp_page_name_invalid">Name darf nur englische Buchstaben und Zahlen enthalten</string>
   <string name="log_page_record_requests">Anfragen aufzeichnen</string>
-  <string name="log_page_record_requests_desc">Anfrage-Header, Bodies und Antwort-Metadaten erfassen</string>
+  <string name="log_page_record_requests_desc">Anfrageheader und Antwortmetadaten werden erfasst. Anfrageinhalte werden zum Schutz vertraulicher Daten nicht aufgezeichnet.</string>
   <string name="chat_message_tool_recent_chats">Letzte Chats anzeigen</string>
   <string name="chat_message_tool_conversation_search">Verlauf durchsuchen: %1$s</string>
   <string name="assistant_page_local_tools_screen_time_title">Bildschirmzeit</string>
