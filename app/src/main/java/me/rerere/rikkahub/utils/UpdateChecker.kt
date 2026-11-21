@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Environment
 import android.widget.Toast
 import androidx.core.net.toUri
+import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,7 +21,6 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.URI
 
 private const val API_URL = "https://updates.rikka-ai.com/"
 
@@ -80,17 +80,24 @@ class UpdateChecker(
             Toast.makeText(context, "Invalid update download URL", Toast.LENGTH_SHORT).show()
             return
         }
+        val safeName = download.name
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .filter { it >= ' ' && it != '\u007f' }
+            .take(128)
+            .takeUnless { it.isBlank() || it == "." || it == ".." }
+            ?: "rikkahub-update.apk"
         runCatching {
             val request = DownloadManager.Request(safeUrl.toUri()).apply {
                 // 设置下载时通知栏的标题和描述
-                setTitle(download.name)
+                setTitle(safeName)
                 setDescription("正在下载更新包...")
                 // 下载完成后通知栏可见
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 // 允许在移动网络和WiFi下下载
                 setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
                 // 设置文件保存路径
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, download.name)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
                 // 允许下载的文件类型
                 setMimeType("application/vnd.android.package-archive")
             }
