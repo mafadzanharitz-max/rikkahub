@@ -46,19 +46,17 @@ jobs:
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/apply-overlay.py" scripts/ci/
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/build-native.py" scripts/ci/
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/setup-android.py" scripts/ci/
-          # Adapt the pinned overlay script itself: retain the current transactional rootfs swap.
+          # Align the pinned overlay's rootfs hook with the current rollback-safe installer.
           python3 - <<'PY'
           from pathlib import Path
 
           script = Path("scripts/ci/apply-overlay.py")
           source = script.read_text()
-          old = """    replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\\n            linuxDir.deleteRecursively()',
-                 'extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            linuxDir.deleteRecursively()')"""
-          new = """    replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\\n            if (backupDir.exists()',
-                 'extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            if (backupDir.exists()')"""
-          if source.count(old) != 1:
-              raise SystemExit("Pinned overlay rootfs adaptation block changed; refusing unsafe patch")
-          script.write_text(source.replace(old, new, 1))
+          old = "linuxDir.deleteRecursively()"
+          if source.count(old) != 2:
+              raise SystemExit("Pinned overlay rootfs hook changed; refusing unsafe patch")
+          source = source.replace(old, "if (backupDir.exists() && !linuxDir.exists())")
+          script.write_text(source)
           PY
           python3 - <<'PY'
           import json
