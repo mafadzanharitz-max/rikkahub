@@ -61,12 +61,12 @@ HELPERS = """    /**
                 }
             }
             check(backupDir.renameTo(linuxDir)) {
-                "Unable to restore previous RootFS from backup: \${backupDir.absolutePath}"
+                "Unable to restore previous RootFS from backup: ${backupDir.absolutePath}"
             }
         } else {
             // A usable active RootFS means activation completed; this is stale backup data.
             check(backupDir.deleteRecursively()) {
-                "Unable to remove stale RootFS backup: \${backupDir.absolutePath}"
+                "Unable to remove stale RootFS backup: ${backupDir.absolutePath}"
             }
         }
     }
@@ -98,7 +98,7 @@ HELPERS = """    /**
             }
             if (hadPreviousRootfs && backupDir.exists() && !backupDir.renameTo(linuxDir)) {
                 failure.addSuppressed(
-                    IOException("Previous RootFS remains preserved at \${backupDir.absolutePath}")
+                    IOException("Previous RootFS remains preserved at ${backupDir.absolutePath}")
                 )
             }
             throw failure
