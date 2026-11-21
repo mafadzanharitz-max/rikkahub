@@ -17,6 +17,22 @@ class RootfsInstallerTest {
     val tmp = TemporaryFolder()
 
     @Test
+    fun `install rejects insecure and credential-bearing URLs before creating workspace`() {
+        val baseDir = tmp.newFolder("workspace-base")
+        val manager = WorkspaceManager(baseDir)
+        val installer = RootfsInstaller(manager)
+
+        listOf(
+            "http://example.com/rootfs.tar.gz",
+            "https://user:password@example.com/rootfs.tar.gz",
+        ).forEach { url ->
+            val error = runCatching { installer.install("test-root", url) }.exceptionOrNull()
+            assertTrue("Expected URL rejection for $url", error is IllegalArgumentException)
+            assertFalse("Workspace must not be created for rejected URL", manager.workspaceDir("test-root").exists())
+        }
+    }
+
+    @Test
     fun `extract skips OTHER entry data exactly once`() {
         // OTHER 条目 (如 GNU sparse) 带 size>0 数据区, 双重 skip 会让后续 header 错位
         val archive = tmp.newFile("rootfs.tar.gz")
