@@ -89,6 +89,9 @@ class RootfsInstaller(
             }
             require(code in 200..299) { "Rootfs download failed: HTTP $code" }
             val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
+            require(totalBytes == null || totalBytes <= MAX_DOWNLOAD_BYTES) {
+                "Rootfs archive exceeds the maximum download size"
+            }
             target.parentFile?.mkdirs()
             connection.inputStream.use { input ->
                 target.outputStream().use { output ->
