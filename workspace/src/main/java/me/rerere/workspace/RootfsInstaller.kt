@@ -69,8 +69,11 @@ class RootfsInstaller(
                         checkInterrupted()
                         val read = input.read(buffer)
                         if (read < 0) break
-                        output.write(buffer, 0, read)
                         bytesRead += read
+                        require(bytesRead <= MAX_DOWNLOAD_BYTES) {
+                            "Rootfs archive exceeds the maximum download size"
+                        }
+                        output.write(buffer, 0, read)
                         if (bytesRead - lastReportBytes >= PROGRESS_STEP_BYTES || bytesRead == totalBytes) {
                             lastReportBytes = bytesRead
                             onProgress(
@@ -106,6 +109,7 @@ class RootfsInstaller(
     ) {
         format.wrapStream(BufferedInputStream(archive.inputStream())).use { input ->
             var entries = 0
+            var expandedBytes = 0L
             var pendingName: String? = null
             var pendingLinkName: String? = null
             while (true) {
@@ -117,6 +121,15 @@ class RootfsInstaller(
                 )
                 pendingName = null
                 pendingLinkName = null
+                require(header.size >= 0) { "Invalid negative tar entry size" }
+                expandedBytes += header.size
+                require(expandedBytes <= MAX_EXTRACTED_BYTES) {
+                    "Rootfs archive exceeds the maximum extracted size"
+                }
+                entries++
+                require(entries <= MAX_TAR_ENTRIES) {
+                    "Rootfs archive contains too many entries"
+                }
                 if (header.name.isBlank()) {
                     input.skipFully(header.size.paddedTarSize())
                     continue
@@ -165,7 +178,6 @@ class RootfsInstaller(
                 if (header.modTime > 0 && header.type != TarEntryType.SYMLINK) {
                     target.setLastModified(header.modTime * 1000)
                 }
-                entries++
                 onProgress(
                     RootfsInstallProgress(
                         stage = RootfsInstallStage.EXTRACTING,
@@ -414,5 +426,8 @@ class RootfsInstaller(
         private const val PROGRESS_STEP_BYTES = 512 * 1024
         private const val CONNECT_TIMEOUT_MS = 30_000
         private const val READ_TIMEOUT_MS = 60_000
+        private const val MAX_DOWNLOAD_BYTES = 1024L * 1024 * 1024
+        private const val MAX_EXTRACTED_BYTES = 4L * 1024 * 1024 * 1024
+        private const val MAX_TAR_ENTRIES = 200_000
     }
 }
