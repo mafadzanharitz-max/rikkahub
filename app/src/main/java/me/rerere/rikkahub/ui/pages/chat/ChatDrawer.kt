@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -809,7 +810,10 @@ private fun DrawerEntry(
                         .padding(end = 4.dp)
                         .size(32.dp)
                         .clip(CircleShape)
-                        .clickable(onClick = onTrailingClick),
+                        .clickable(
+                            role = Role.Button,
+                            onClick = onTrailingClick,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
