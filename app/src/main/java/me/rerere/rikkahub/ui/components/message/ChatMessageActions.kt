@@ -146,7 +146,7 @@ fun ColumnScope.ChatMessageActionButtons(
                 ) {
                     Icon(
                         imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
-                        contentDescription = stringResource(R.string.tts),
+                        contentDescription = stringResource(if (isSpeaking) R.string.stop else R.string.tts),
                         modifier = Modifier.size(ActionIconSize),
                     )
                 }
