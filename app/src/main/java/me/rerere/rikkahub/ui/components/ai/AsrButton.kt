@@ -41,6 +41,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import me.rerere.asr.ASRState
 import me.rerere.rikkahub.R
@@ -83,6 +85,12 @@ internal fun AsrButton(
         label = "asr_content"
     )
 
+    val accessibilityLabel = when (state.status) {
+        ASRStatus.Idle, ASRStatus.Error -> stringResource(R.string.asr_button_content_description)
+        ASRStatus.Connecting -> stringResource(R.string.chat_page_voice_connecting)
+        ASRStatus.Listening, ASRStatus.Stopping -> stringResource(R.string.asr_button_stop)
+    }
+
     val displayState = when (state.status) {
         ASRStatus.Idle, ASRStatus.Error -> AsrDisplayState.Idle
         ASRStatus.Connecting -> AsrDisplayState.Connecting
@@ -94,7 +102,8 @@ internal fun AsrButton(
         modifier = Modifier
             .height(36.dp)
             .widthIn(min = 36.dp)
-            .animateContentSize(animationSpec = MotionScheme.expressive().defaultSpatialSpec()),
+            .animateContentSize(animationSpec = MotionScheme.expressive().defaultSpatialSpec())
+            .semantics { contentDescription = accessibilityLabel },
         shape = CircleShape,
         tonalElevation = if (isIdle) 0.dp else 2.dp,
         color = containerColor,
