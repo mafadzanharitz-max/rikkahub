@@ -80,8 +80,11 @@ jobs:
 
           path = Path("workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt")
           source = path.read_text()
-          old = "            extractTar(archive, stagingDir, format, onProgress)\\n            if (backupDir.exists()"
-          new = "            extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            if (backupDir.exists()"
+          old = """            extractTar(archive, stagingDir, format, onProgress)
+                      if (backupDir.exists()"""
+          new = """            extractTar(archive, stagingDir, format, onProgress)
+                      Armv7Rootfs.validate(stagingDir)
+                      if (backupDir.exists()"""
           if source.count(old) != 1:
               raise SystemExit("Rootfs installer transaction hook changed; refusing unsafe patch")
           path.write_text(source.replace(old, new, 1))
