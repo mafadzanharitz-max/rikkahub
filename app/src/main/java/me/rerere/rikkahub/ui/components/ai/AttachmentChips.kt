@@ -226,8 +226,8 @@ private fun AttachmentChip(
     ) {
         Row(
             modifier = Modifier
-                .height(44.dp)
-                .padding(start = 8.dp, end = 6.dp),
+                .height(48.dp)
+                .padding(start = 8.dp, end = 0.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -239,18 +239,15 @@ private fun AttachmentChip(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.widthIn(min = 40.dp, max = 180.dp),
             )
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .size(26.dp)
-                    .clickable(onClick = onRemove),
-                contentAlignment = Alignment.Center
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(48.dp),
             ) {
                 Icon(
                     imageVector = HugeIcons.Cancel01,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.delete) + " " + title,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
