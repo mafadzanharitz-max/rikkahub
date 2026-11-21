@@ -42,6 +42,11 @@ class RootfsInstaller(
             stagingDir.mkdirs()
             download(url, archive, onProgress)
             extractTar(archive, stagingDir, format, onProgress)
+            if (backupDir.exists() && !linuxDir.exists()) {
+                require(backupDir.renameTo(linuxDir)) {
+                    "Failed to recover the previous rootfs backup"
+                }
+            }
             backupDir.deleteRecursively()
             if (linuxDir.exists()) {
                 require(linuxDir.renameTo(backupDir)) {
