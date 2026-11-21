@@ -212,7 +212,7 @@ def apply(root):
     }
 
 '''
-    if "LimitedInputStream(" not in s:
+    if "private inner class LimitedInputStream(" not in s:
         if s.count(marker) != 1: raise SystemExit("LimitedInputStream insertion point changed")
         s = s.replace(marker, limited + marker, 1)
     constants = '''        private const val MAX_COMPRESSED_ARCHIVE_BYTES = 512L * 1024 * 1024
@@ -223,7 +223,7 @@ def apply(root):
         private const val MAX_METADATA_ENTRY_BYTES = 1024L * 1024
         private const val MIN_FREE_SPACE_BYTES = 32L * 1024 * 1024
 '''
-    if "MAX_COMPRESSED_ARCHIVE_BYTES" not in s:
+    if "private const val MAX_COMPRESSED_ARCHIVE_BYTES" not in s:
         s = once(s, "        private const val TAR_BLOCK_SIZE = 512\n",
                  constants + "        private const val TAR_BLOCK_SIZE = 512\n",
                  "archive limit constants")
