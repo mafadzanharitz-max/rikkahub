@@ -6,6 +6,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import me.rerere.ai.provider.ProviderHttpException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +31,40 @@ class RetryTest {
         assertEquals(listOf(1, 2), attempts.map { it.retry })
         assertEquals(listOf(1.seconds, 2.seconds), attempts.map { it.delay })
         assertEquals(3_000L, currentTime)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `transient HTTP failures are retried`() = runTest {
+        var calls = 0
+        val attempts = mutableListOf<RetryAttempt>()
+
+        val result = withRetry(RetryPolicy.NETWORK, onRetry = { attempts += it }) {
+            calls++
+            if (calls == 1) throw ProviderHttpException(503)
+            "ok"
+        }
+
+        assertEquals("ok", result)
+        assertEquals(2, calls)
+        assertEquals(1, attempts.size)
+        assertTrue(attempts.single().cause is ProviderHttpException)
+    }
+
+    @Test
+    fun `authentication rate limit and invalid request HTTP failures are not retried`() = runTest {
+        for (statusCode in listOf(400, 401, 403, 402, 429)) {
+            var calls = 0
+            val error = runCatching {
+                withRetry(RetryPolicy.NETWORK) {
+                    calls++
+                    throw ProviderHttpException(statusCode)
+                }
+            }.exceptionOrNull()
+
+            assertTrue(error is ProviderHttpException)
+            assertEquals("HTTP $statusCode must not retry", 1, calls)
+        }
     }
 
     @Test
