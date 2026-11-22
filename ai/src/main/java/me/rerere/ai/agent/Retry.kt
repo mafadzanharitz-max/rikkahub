@@ -19,7 +19,7 @@ data class RetryPolicy(
     val maxRetries: Int,
     val initialDelay: Duration = 1.seconds,
     val retryOn: (Throwable) -> Boolean = {
-        it is IOException || (it is ProviderHttpException && it.fallbackEligible)
+        it is IOException || (it is ProviderHttpException && it.retryEligible)
     },
 ) {
     companion object {
