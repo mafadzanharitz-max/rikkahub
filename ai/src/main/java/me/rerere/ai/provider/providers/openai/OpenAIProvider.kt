@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.rerere.ai.provider.ProviderHttpException
 import me.rerere.ai.provider.EmbeddingGenerationParams
 import me.rerere.ai.provider.EmbeddingGenerationResult
 import me.rerere.ai.provider.ImageEditParams
@@ -70,8 +71,8 @@ class OpenAIProvider(
 
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to get models: ${response.code} ${response.body?.string()}")
-            }
+            throw ProviderHttpException(response.code)
+        }
 
             val bodyStr = response.body?.string() ?: ""
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
@@ -160,7 +161,7 @@ class OpenAIProvider(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to generate embedding: ${response.code} ${response.body?.string()}")
+            throw ProviderHttpException(response.code)
         }
 
         val bodyStr = response.body?.string() ?: ""
@@ -222,8 +223,8 @@ class OpenAIProvider(
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to generate image: ${response.code} ${response.body?.string()}")
-            }
+            throw ProviderHttpException(response.code)
+        }
             parseImageResponse(response.body.string())
         }
 
@@ -293,8 +294,8 @@ class OpenAIProvider(
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
             if (!response.isSuccessful) {
-                error("Failed to edit image: ${response.code} ${response.body?.string()}")
-            }
+            throw ProviderHttpException(response.code)
+        }
             parseImageResponse(response.body.string())
         }
 
@@ -347,7 +348,7 @@ class OpenAIProvider(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to edit image: ${response.code} ${response.body?.string()}")
+            throw ProviderHttpException(response.code)
         }
         parseImageResponse(response.body.string())
     }
@@ -382,7 +383,7 @@ class OpenAIProvider(
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to download generated image: ${response.code} ${response.body.string()}")
+            throw ProviderHttpException(response.code)
         }
 
         val body = response.body
