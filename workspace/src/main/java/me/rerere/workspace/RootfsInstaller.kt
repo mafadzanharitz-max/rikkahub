@@ -16,6 +16,9 @@ import org.tukaani.xz.XZInputStream
 class RootfsInstaller(
     private val manager: WorkspaceManager,
     private val patcher: RootfsPatcher = RootfsPatcher(),
+    private val connectionFactory: (URL) -> HttpURLConnection = {
+        it.openConnection() as HttpURLConnection
+    },
 ) {
     fun install(
         root: String,
@@ -78,7 +81,7 @@ class RootfsInstaller(
         target: File,
         onProgress: (RootfsInstallProgress) -> Unit,
     ) {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val connection = connectionFactory(URL(url))
         connection.connectTimeout = CONNECT_TIMEOUT_MS
         connection.readTimeout = READ_TIMEOUT_MS
         connection.instanceFollowRedirects = true

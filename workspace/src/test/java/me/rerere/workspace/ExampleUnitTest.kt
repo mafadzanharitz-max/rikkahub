@@ -1,11 +1,9 @@
 package me.rerere.workspace
 
-import com.sun.net.httpserver.HttpServer
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.zip.GZIPOutputStream
 
@@ -61,29 +59,32 @@ class ExampleUnitTest {
     fun rootfsInstallerDownloadsAndExtractsTarGz() {
         val baseDir = Files.createTempDirectory("workspace-manager-test").toFile()
         val manager = WorkspaceManager(baseDir)
-        val installer = RootfsInstaller(manager)
         val archive = tarGz(
             TarTestEntry("bin/", type = '5'),
             TarTestEntry("bin/hello", content = "echo hello\n".toByteArray(), mode = 493),
             TarTestEntry("usr/bin/hello-link", type = '2', linkName = "../../bin/hello"),
         )
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/rootfs.tar.gz") { exchange ->
-            exchange.sendResponseHeaders(200, archive.size.toLong())
-            exchange.responseBody.use { it.write(archive) }
-        }
-        server.start()
-        try {
-            val root = "test-workspace"
-            installer.install(root, "http://127.0.0.1:${server.address.port}/rootfs.tar.gz")
+        val url = java.net.URL("https://rootfs.test/rootfs.tar.gz")
+        val installer = RootfsInstaller(
+            manager,
+            connectionFactory = { requestUrl ->
+                object : java.net.HttpURLConnection(requestUrl) {
+                    override fun connect() {}
+                    override fun disconnect() {}
+                    override fun usingProxy() = false
+                    override fun getResponseCode() = 200
+                    override fun getInputStream() = java.io.ByteArrayInputStream(archive)
+                }
+            },
+        )
 
-            val linuxDir = manager.linuxDir(root)
-            assertEquals("echo hello\n", File(linuxDir, "bin/hello").readText())
-            assertTrue(File(linuxDir, "bin/hello").canExecute())
-            assertTrue(Files.isSymbolicLink(File(linuxDir, "usr/bin/hello-link").toPath()))
-        } finally {
-            server.stop(0)
-        }
+        val root = "test-workspace"
+        installer.install(root, url.toString())
+
+        val linuxDir = manager.linuxDir(root)
+        assertEquals("echo hello\n", File(linuxDir, "bin/hello").readText())
+        assertTrue(File(linuxDir, "bin/hello").canExecute())
+        assertTrue(Files.isSymbolicLink(File(linuxDir, "usr/bin/hello-link").toPath()))
     }
 
     @Test
