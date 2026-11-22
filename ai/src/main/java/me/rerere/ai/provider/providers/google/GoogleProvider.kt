@@ -150,7 +150,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             val response = client.newCall(request).await()
             if (response.isSuccessful) {
                 val body = response.body?.string() ?: error("empty body")
-                Log.d(TAG, "listModels: $body")
                 val bodyObject = json.parseToJsonElement(body).jsonObject
                 val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
 
@@ -518,7 +517,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         val parts = parseMessageParts(content["parts"]?.jsonArray)
 
         val groundingMetadata = message["groundingMetadata"]?.jsonObject
-        Log.i(TAG, "parseMessage: $groundingMetadata")
         val annotations = parseSearchGroundingMetadata(groundingMetadata)
 
         return UIMessage(
@@ -540,7 +538,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 url = uri
             )
         }
-        Log.i(TAG, "parseSearchGroundingMetadata: $chunks")
         return chunks
     }
 
