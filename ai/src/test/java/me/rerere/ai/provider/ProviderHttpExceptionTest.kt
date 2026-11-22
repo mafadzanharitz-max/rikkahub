@@ -11,6 +11,7 @@ class ProviderHttpExceptionTest {
         listOf(401, 403).forEach { status ->
             val error = ProviderHttpException(status)
             assertEquals(ProviderHttpException.Kind.AUTHENTICATION, error.kind)
+            assertFalse(error.retryEligible)
             assertFalse(error.fallbackEligible)
         }
     }
@@ -29,6 +30,7 @@ class ProviderHttpExceptionTest {
         listOf(408, 425, 500, 502, 503, 504).forEach { status ->
             val error = ProviderHttpException(status)
             assertEquals(ProviderHttpException.Kind.TRANSIENT_SERVER, error.kind)
+            assertTrue(error.retryEligible)
             assertTrue(error.fallbackEligible)
         }
     }
