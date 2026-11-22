@@ -310,28 +310,14 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 t?.printStackTrace()
                 println("[onFailure] 发生错误: ${t?.message}")
 
-                try {
-                    if (t == null && response != null) {
-                        val bodyStr = response.body.stringSafe()
-                        if (!bodyStr.isNullOrEmpty()) {
-                            val bodyElement = json.parseToJsonElement(bodyStr)
-                            println(bodyElement)
-                            if (bodyElement is JsonObject) {
-                                exception = Exception(
-                                    bodyElement["error"]?.jsonObject?.get("message")?.jsonPrimitive?.content
-                                        ?: "unknown"
-                                )
-                            }
-                        } else {
-                            exception = Exception("Unknown error: ${response.code}")
-                        }
+                if (t == null && response != null) {
+                    exception = if (!response.isSuccessful) {
+                        ProviderHttpException(response.code)
+                    } else {
+                        Exception("Provider stream failed")
                     }
-                } catch (e: Throwable) {
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception ?: Exception("Stream failed"))
                 }
+                close(exception ?: Exception("Stream failed"))
             }
 
             override fun onClosed(eventSource: EventSource) {
