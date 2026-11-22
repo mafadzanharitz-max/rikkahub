@@ -712,7 +712,7 @@ class ChatCompletionsAPI(
                                         put("url", encodedImage.base64)
                                     })
                                 }.onFailure {
-                                    Log.w(TAG, "encode tool result image failed: ${part.url}", it)
+                                    Log.w(TAG, "encode tool result image failed", it)
                                     put("type", "text")
                                     put("text", "Error: Failed to encode image to base64")
                                 }
