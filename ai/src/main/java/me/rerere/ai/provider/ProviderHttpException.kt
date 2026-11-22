@@ -28,7 +28,11 @@ class ProviderHttpException(
             else -> Kind.OTHER
         }
 
-    /** Cross-provider fallback is safe to consider only for transient HTTP failures. */
+    /** Same-provider retry is allowed only for transient HTTP failures. */
+    val retryEligible: Boolean
+        get() = kind == Kind.TRANSIENT_SERVER
+
+    /** Cross-provider fallback may be considered only for transient HTTP failures. */
     val fallbackEligible: Boolean
         get() = kind == Kind.TRANSIENT_SERVER
 }
