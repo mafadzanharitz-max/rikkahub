@@ -379,7 +379,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: type=$type, data=$data")
+                Log.d(TAG, "onEvent: type=$type")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
@@ -390,7 +390,6 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                t?.printStackTrace()
                 val failure = when {
                     response != null && !response.isSuccessful -> ProviderHttpException(response.code, t)
                     t != null -> t
