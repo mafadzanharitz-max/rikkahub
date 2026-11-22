@@ -29,6 +29,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import me.rerere.ai.provider.ProviderHttpException
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.TokenUsage
@@ -254,8 +255,8 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                error("Failed to get models: ${response.code} ${response.body?.string()}")
-            }
+            throw ProviderHttpException(response.code)
+        }
 
             val bodyStr = response.body?.string() ?: ""
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
@@ -310,7 +311,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
 
         val response = client.newCall(request).await()
         if (!response.isSuccessful) {
-            throw Exception("Failed to get response: ${response.code} ${response.body?.string()}")
+            throw ProviderHttpException(response.code)
         }
 
         val bodyStr = response.body?.string() ?: ""
