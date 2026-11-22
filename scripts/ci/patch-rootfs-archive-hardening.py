@@ -16,6 +16,60 @@ def once(s, old, new, label):
 def apply(root):
     p = root / INSTALLER
     s = p.read_text()
+    old_pax = r'''    private fun parsePax(text: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        var index = 0
+        while (index < text.length) {
+            val space = text.indexOf(' ', index)
+            if (space < 0) break
+            val length = text.substring(index, space).toIntOrNull() ?: break
+            val end = (index + length).coerceAtMost(text.length)
+            val record = text.substring(space + 1, end).trimEnd('\\n')
+            val equals = record.indexOf('=')
+            if (equals > 0) {
+                result[record.substring(0, equals)] = record.substring(equals + 1)
+            }
+            index += length
+        }
+        return result
+    }
+'''
+    new_pax = r'''    private fun parsePax(text: String): Map<String, String> {
+        // PAX record lengths are UTF-8 byte counts, not Kotlin character counts.
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        val result = mutableMapOf<String, String>()
+        var index = 0
+        while (index < bytes.size) {
+            val space = bytes.indexOf(' '.code.toByte(), index)
+            require(space > index) { "Malformed RootFS PAX record length" }
+            val lengthText = String(bytes, index, space - index, Charsets.US_ASCII)
+            require(lengthText.isNotEmpty() && lengthText.all { it in '0'..'9' }) {
+                "Malformed RootFS PAX record length"
+            }
+            val length = lengthText.toIntOrNull()
+                ?: throw IllegalArgumentException("RootFS PAX record length is out of range")
+            require(length > 0 && length <= bytes.size - index) {
+                "RootFS PAX record exceeds its metadata entry"
+            }
+            val end = index + length
+            val recordEnd = end - 1
+            require(recordEnd > space && bytes[recordEnd] == '\\n'.code.toByte()) {
+                "Malformed RootFS PAX record terminator"
+            }
+            val recordStart = space + 1
+            val equals = bytes.indexOf('='.code.toByte(), recordStart)
+            require(equals > recordStart && equals < recordEnd) {
+                "Malformed RootFS PAX key/value record"
+            }
+            val key = String(bytes, recordStart, equals - recordStart, Charsets.UTF_8)
+            val value = String(bytes, equals + 1, recordEnd - equals - 1, Charsets.UTF_8)
+            result[key] = value
+            index = end
+        }
+        return result
+    }
+'''
+    s = once(s, old_pax, new_pax, "PAX record parser")
     s = once(s, '            val totalBytes = connection.contentLengthLong.takeIf { it > 0 }\n',
 '''            val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
             require(totalBytes == null || totalBytes <= MAX_COMPRESSED_ARCHIVE_BYTES) {
