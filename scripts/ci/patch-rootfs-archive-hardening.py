@@ -397,6 +397,52 @@ def apply(root):
         }
     }
 
+    @Test
+    fun extractRejectsMalformedPaxRecordLength() {
+        val archive = tmp.newFile("malformed-pax.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("PaxHeaders/bad", 'x', "0 path=bad\\n".toByteArray())
+            out.writeTarEntry("fallback", '0', "content".toByteArray())
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("safe-pax")
+        try {
+            createInstaller().extractTar(archive, target) {}
+            throw AssertionError("Expected malformed PAX record rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("PAX"))
+            assertFalse(File(target, "fallback").exists())
+        }
+    }
+
+    @Test
+    fun extractUsesUtf8ByteLengthsForMultiplePaxRecords() {
+        val archive = tmp.newFile("unicode-pax.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("目录/", '5', ByteArray(0))
+            out.writeTarEntry("目录/target", '0', "target".toByteArray())
+            val pax = paxRecord("path", "目录/link") + paxRecord("linkpath", "target")
+            out.writeTarEntry("PaxHeaders/link", 'x', pax)
+            out.writeTarEntry("fallback", '2', ByteArray(0), linkName = "wrong")
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("unicode-pax")
+        createInstaller().extractTar(archive, target) {}
+
+        assertTrue(Files.isSymbolicLink(File(target, "目录/link").toPath()))
+        assertEquals("target", Files.readSymbolicLink(File(target, "目录/link").toPath()).toString())
+    }
+
+    private fun paxRecord(key: String, value: String): ByteArray {
+        val body = "$key=$value\\n"
+        var length = body.toByteArray(Charsets.UTF_8).size + 2
+        while (true) {
+            val record = "$length $body".toByteArray(Charsets.UTF_8)
+            if (record.size == length) return record
+            length = record.size
+        }
+    }
+
 '''
     if "extractRejectsPathTraversal" not in tests:
         marker = "    private fun createInstaller()"
