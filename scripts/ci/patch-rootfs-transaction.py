@@ -215,6 +215,20 @@ def apply(root: Path) -> None:
         assertFalse(backup.exists())
     }
 
+    @Test
+    fun backupRecoveryRemovesStaleBackupWhenActiveRootfsIsUsable() {
+        val linux = tmp.newFolder("linux")
+        File(linux, "bin").mkdirs()
+        File(linux, "bin/sh").writeText("shell")
+        val backup = tmp.newFolder("backup")
+        File(backup, "old-rootfs").writeText("old")
+
+        createInstaller().recoverRootfsBackup(linux, backup)
+
+        assertEquals("shell", File(linux, "bin/sh").readText())
+        assertFalse(backup.exists())
+    }
+
 """
     if "activationFailureRestoresPreviousRootfs" not in tests:
         marker = "    private fun createInstaller()"
