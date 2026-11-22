@@ -61,7 +61,7 @@ fun Request.Builder.configureSessionHeaders(url: String, sessionId: String?): Re
     }
 }
 
-/** 执行请求并读出响应体；不是 2xx 时报错，带上路径、状态码和响应体（不带 query，里面可能有 key） */
+/** 执行请求并读出响应体；非 2xx 时仅抛出包含 HTTP 状态码的类型化异常，不保留响应体。 */
 internal suspend fun OkHttpClient.fetchBody(request: Request): String = withContext(Dispatchers.IO) {
     newCall(request).await().use { response ->
         if (!response.isSuccessful) {
