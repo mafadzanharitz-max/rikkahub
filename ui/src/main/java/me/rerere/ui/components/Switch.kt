@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -47,7 +48,8 @@ fun Switch(
     trackColor: Color = MaterialTheme.colorScheme.primary,
     trackColorUnchecked: Color = MaterialTheme.colorScheme.surfaceVariant,
     thumbColor: Color = MaterialTheme.colorScheme.onPrimary,
-    thumbColorUnchecked: Color = MaterialTheme.colorScheme.outline
+    thumbColorUnchecked: Color = MaterialTheme.colorScheme.outline,
+    contentDescription: String? = null
 ) {
     val dimensions = when (size) {
         SwitchSize.Small -> SwitchDimensions(
@@ -97,6 +99,13 @@ fun Switch(
     Box(
         modifier = modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .then(
+                contentDescription?.let { description ->
+                    Modifier.semantics(mergeDescendants = true) {
+                        this.contentDescription = description
+                    }
+                } ?: Modifier
+            )
             .toggleable(
                 value = checked,
                 enabled = enabled,

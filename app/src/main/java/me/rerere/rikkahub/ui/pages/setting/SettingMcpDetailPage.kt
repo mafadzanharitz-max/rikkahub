@@ -362,7 +362,8 @@ private fun McpCommonOptionsConfigure(
                                 )
                             }
                         )
-                    }
+                    },
+                    contentDescription = stringResource(R.string.setting_mcp_page_enable)
                 )
             }
         }
@@ -712,7 +713,8 @@ private fun McpToolCard(
                     Switch(
                         checked = tool.needsApproval,
                         onCheckedChange = onNeedsApprovalChange,
-                        size = SwitchSize.Small
+                        size = SwitchSize.Small,
+                        contentDescription = stringResource(R.string.setting_mcp_page_needs_approval)
                     )
                 }
                 // 启用开关
@@ -721,13 +723,14 @@ private fun McpToolCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "启用",
+                        text = stringResource(R.string.setting_mcp_page_enable),
                         style = MaterialTheme.typography.labelSmall,
                     )
                     Switch(
                         checked = tool.enable,
                         onCheckedChange = onEnableChange,
-                        size = SwitchSize.Small
+                        size = SwitchSize.Small,
+                        contentDescription = stringResource(R.string.setting_mcp_page_enable)
                     )
                 }
                 // 展开/收起按钮
