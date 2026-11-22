@@ -287,14 +287,14 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                 type: String?,
                 data: String
             ) {
-                Log.i(TAG, "onEvent: $data")
+                Log.i(TAG, "onEvent: type=$type")
 
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
                     if (result.completed) close()
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to parse stream event: $data", e)
+                    Log.e(TAG, "Failed to parse provider stream event", e)
                     close(e)
                 }
             }
@@ -306,8 +306,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             ) {
                 var exception = t
 
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.message}")
 
                 if (t == null && response != null) {
                     exception = if (!response.isSuccessful) {
