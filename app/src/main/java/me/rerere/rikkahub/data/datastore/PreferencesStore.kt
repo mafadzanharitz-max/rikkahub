@@ -229,12 +229,17 @@ class SettingsStore internal constructor(
         // 整份设置的 JSON 解码很重，不能放在主线程
         scope.launch(Dispatchers.Default) {
             state.value = try {
-                preferencesFlow.first().toSettings().normalized()
+                val preferences = preferencesFlow.first()
+                val loaded = preferences.toSettings().normalized()
+                // Migrate legacy plaintext secrets before exposing settings to the rest of the app.
+                // DataStore edit is atomic; already-encrypted values remain unchanged.
+                dataStore.edit { it.encryptLegacySensitiveSettings() }
+                loaded
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                // 读不出设置就不能带着占位值继续运行：界面上是一份默认设置，而任何修改都落不了盘
-                Log.e(TAG, "Failed to load settings", e)
+                // Keep diagnostics useful without logging potentially sensitive settings payloads.
+                Log.e(TAG, "Failed to load settings (${e.javaClass.simpleName})")
                 Runtime.getRuntime().halt(1)
                 throw e
             }

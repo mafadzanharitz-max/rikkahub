@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.rerere.rikkahub.data.model.Lorebook
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -34,6 +35,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.uuid.Uuid
 
 class SettingsStoreTest {
+    @Before
+    fun useJvmTestCipher() {
+        SettingsSecretCodec.encrypt = { "test:" + it }
+        SettingsSecretCodec.decrypt = { it.removePrefix("test:") }
+    }
+
     @get:Rule
     val temp = TemporaryFolder()
 
@@ -46,6 +53,8 @@ class SettingsStoreTest {
     @After
     fun tearDown() {
         runBlocking { opened?.close() }
+        SettingsSecretCodec.encrypt = me.rerere.rikkahub.utils.SecretCipher::encrypt
+        SettingsSecretCodec.decrypt = me.rerere.rikkahub.utils.SecretCipher::decrypt
     }
 
     // 同一个文件同一时间只能有一个 DataStore，重新打开前先关掉上一个
@@ -116,6 +125,8 @@ class SettingsStoreTest {
         val opened = open()
         val store = opened.store
         store.awaitLoaded()
+        // Exclude the one-time legacy-secret migration from this write-coalescing count.
+        opened.disk.writes.set(0)
         val gate = CompletableDeferred<Unit>()
         opened.disk.writeGate = gate
 

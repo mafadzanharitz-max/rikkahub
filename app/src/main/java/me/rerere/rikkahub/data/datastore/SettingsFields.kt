@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.SecretCipher
 import kotlin.reflect.KProperty1
 import kotlin.uuid.Uuid
 
@@ -57,6 +58,79 @@ private inline fun <reified T> json(
     decode = { JsonInstant.decodeFromString<T>(it) },
 )
 
+/**
+ * Sensitive settings are encrypted as a whole JSON value at rest. The version marker
+ * allows older plaintext values to be read and migrated without losing user settings.
+ */
+private const val ENCRYPTED_SETTINGS_PREFIX = "rikkahub-encrypted:v1:"
+
+/** Indirection keeps JVM settings tests independent of Android Keystore; production uses SecretCipher. */
+internal object SettingsSecretCodec {
+    @Volatile
+    var encrypt: (String) -> String = SecretCipher::encrypt
+
+    @Volatile
+    var decrypt: (String) -> String = SecretCipher::decrypt
+}
+
+private inline fun <reified T> encryptedJson(
+    key: Preferences.Key<String>,
+    property: KProperty1<Settings, T>,
+    noinline set: Settings.(T) -> Settings,
+) = SettingsField(
+    key,
+    property,
+    set,
+    encode = { ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(JsonInstant.encodeToString(it)) },
+    decode = { stored ->
+        val plaintext = if (stored.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
+            SettingsSecretCodec.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
+        } else {
+            stored
+        }
+        JsonInstant.decodeFromString<T>(plaintext)
+    },
+)
+
+private fun encryptedSecret(
+    key: Preferences.Key<String>,
+    property: KProperty1<Settings, String>,
+    set: Settings.(String) -> Settings,
+) = SettingsField(
+    key,
+    property,
+    set,
+    encode = { ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(it) },
+    decode = { stored ->
+        if (stored.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
+            SettingsSecretCodec.decrypt(stored.removePrefix(ENCRYPTED_SETTINGS_PREFIX))
+        } else {
+            stored
+        }
+    },
+)
+
+/** Upgrade legacy plaintext sensitive values atomically on first startup after this version. */
+internal fun MutablePreferences.encryptLegacySensitiveSettings() {
+    fun encrypt(key: Preferences.Key<String>) {
+        val value = this[key] ?: return
+        if (!value.startsWith(ENCRYPTED_SETTINGS_PREFIX)) {
+            this[key] = ENCRYPTED_SETTINGS_PREFIX + SettingsSecretCodec.encrypt(value)
+        }
+    }
+    encrypt(SettingsStore.NETWORK_SETTING)
+    encrypt(SettingsStore.PROVIDERS)
+    encrypt(SettingsStore.SEARCH_SERVICES)
+    encrypt(SettingsStore.MCP_SERVERS)
+    encrypt(SettingsStore.WEBDAV_CONFIG)
+    encrypt(SettingsStore.S3_CONFIG)
+    encrypt(SettingsStore.UPLOAD_S3_CONFIG)
+    encrypt(SettingsStore.MEDIA_GENERATION_PROVIDERS)
+    encrypt(SettingsStore.TTS_PROVIDERS)
+    encrypt(SettingsStore.ASR_PROVIDERS)
+    encrypt(SettingsStore.WEB_SERVER_ACCESS_PASSWORD)
+}
+
 private fun uuid(
     key: Preferences.Key<String>,
     property: KProperty1<Settings, Uuid>,
@@ -83,7 +157,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(THEME_ID, Settings::themeId) { copy(themeId = it) },
         json(CUSTOM_THEMES, Settings::customThemes) { copy(customThemes = it) },
         json(DISPLAY_SETTING, Settings::displaySetting) { copy(displaySetting = it) },
-        json(NETWORK_SETTING, Settings::networkSetting) { copy(networkSetting = it) },
+        encryptedJson(NETWORK_SETTING, Settings::networkSetting) { copy(networkSetting = it) },
         plain(DEVELOPER_MODE, Settings::developerMode) { copy(developerMode = it) },
 
         // 模型选择
@@ -121,7 +195,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(AUTO_COMPRESS_THRESHOLD, Settings::autoCompressThreshold) { copy(autoCompressThreshold = it) },
 
         // 提供商
-        json(PROVIDERS, Settings::providers) { copy(providers = it) },
+        encryptedJson(PROVIDERS, Settings::providers) { copy(providers = it) },
 
         // 助手
         uuid(SELECT_ASSISTANT, Settings::assistantId) { copy(assistantId = it) },
@@ -129,30 +203,30 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         json(ASSISTANT_TAGS, Settings::assistantTags) { copy(assistantTags = it) },
 
         // 搜索
-        json(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
+        encryptedJson(SEARCH_SERVICES, Settings::searchServices) { copy(searchServices = it) },
         json(SEARCH_COMMON, Settings::searchCommonOptions) { copy(searchCommonOptions = it) },
         plain(SEARCH_SELECTED, Settings::searchServiceSelected) { copy(searchServiceSelected = it) },
 
         // MCP
-        json(MCP_SERVERS, Settings::mcpServers) { copy(mcpServers = it) },
+        encryptedJson(MCP_SERVERS, Settings::mcpServers) { copy(mcpServers = it) },
 
         // WebDAV
-        json(WEBDAV_CONFIG, Settings::webDavConfig) { copy(webDavConfig = it) },
+        encryptedJson(WEBDAV_CONFIG, Settings::webDavConfig) { copy(webDavConfig = it) },
 
         // S3
-        json(S3_CONFIG, Settings::s3Config) { copy(s3Config = it) },
-        json(UPLOAD_S3_CONFIG, Settings::uploadS3Config) { copy(uploadS3Config = it) },
+        encryptedJson(S3_CONFIG, Settings::s3Config) { copy(s3Config = it) },
+        encryptedJson(UPLOAD_S3_CONFIG, Settings::uploadS3Config) { copy(uploadS3Config = it) },
 
         // 媒体生成
-        json(MEDIA_GENERATION_PROVIDERS, Settings::mediaGenerationProviders) { copy(mediaGenerationProviders = it) },
+        encryptedJson(MEDIA_GENERATION_PROVIDERS, Settings::mediaGenerationProviders) { copy(mediaGenerationProviders = it) },
 
         // TTS
-        json(TTS_PROVIDERS, Settings::ttsProviders) { copy(ttsProviders = it) },
+        encryptedJson(TTS_PROVIDERS, Settings::ttsProviders) { copy(ttsProviders = it) },
         uuid(SELECTED_TTS_PROVIDER, Settings::selectedTTSProviderId) { copy(selectedTTSProviderId = it) },
         plain(DEFAULT_TTS_PLAYBACK_SPEED, Settings::defaultTTSPlaybackSpeed) { copy(defaultTTSPlaybackSpeed = it) },
 
         // ASR
-        json(ASR_PROVIDERS, Settings::asrProviders) { copy(asrProviders = it) },
+        encryptedJson(ASR_PROVIDERS, Settings::asrProviders) { copy(asrProviders = it) },
         SettingsField(
             SELECTED_ASR_PROVIDER,
             Settings::selectedASRProviderId,
@@ -166,7 +240,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(WEB_SERVER_ENABLED, Settings::webServerEnabled) { copy(webServerEnabled = it) },
         plain(WEB_SERVER_PORT, Settings::webServerPort) { copy(webServerPort = it) },
         plain(WEB_SERVER_JWT_ENABLED, Settings::webServerJwtEnabled) { copy(webServerJwtEnabled = it) },
-        plain(WEB_SERVER_ACCESS_PASSWORD, Settings::webServerAccessPassword) { copy(webServerAccessPassword = it) },
+        encryptedSecret(WEB_SERVER_ACCESS_PASSWORD, Settings::webServerAccessPassword) { copy(webServerAccessPassword = it) },
         plain(WEB_SERVER_LOCALHOST_ONLY, Settings::webServerLocalhostOnly) { copy(webServerLocalhostOnly = it) },
 
         // 提示词注入
