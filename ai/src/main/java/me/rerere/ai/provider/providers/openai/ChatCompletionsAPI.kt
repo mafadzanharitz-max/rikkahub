@@ -179,7 +179,7 @@ class ChatCompletionsAPI(
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $data")
+                Log.d(TAG, "onEvent: type=$type")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
@@ -190,7 +190,6 @@ class ChatCompletionsAPI(
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                t?.printStackTrace()
                 val failure = when {
                     response != null && !response.isSuccessful -> ProviderHttpException(response.code, t)
                     t != null -> t
