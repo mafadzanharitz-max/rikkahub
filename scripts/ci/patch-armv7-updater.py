@@ -20,6 +20,7 @@ replace_once(
     """return releases.mapNotNull { it as? JsonObject }
             .filter { !it.flag("draft") && !it.flag("prerelease") }""",
     """val releaseItems = releases.mapNotNull { it as? JsonObject }
+            .filter { !it.flag("draft") && !it.flag("prerelease") }
         if (releaseItems.isEmpty()) {
             return UpdateInfo(
                 version = "0.0.0",
@@ -28,8 +29,7 @@ replace_once(
                 downloads = emptyList(),
             )
         }
-        return releaseItems
-            .filter { !it.flag("draft") && !it.flag("prerelease") }""",
+        return releaseItems""",
 )
 
 replace_once(
@@ -97,6 +97,14 @@ replace_once(
     """    @Test fun selectsOnlyCompatibleFormalRelease() {""",
     """    @Test fun emptyReleaseListMeansNoUpdateRatherThanNetworkFailure() {
         val info = Armv7Updates.decode("[]")
+        assertEquals("0.0.0", info.version)
+        assertEquals(0, info.downloads.size)
+    }
+
+    @Test fun releasesWithoutEligibleFormalVersionsMeanNoUpdate() {
+        val draft = release("3.2.0").replace("\\"draft\\":false", "\\"draft\\":true")
+        val preview = release("3.3.0").replace("\\"prerelease\\":false", "\\"prerelease\\":true")
+        val info = Armv7Updates.decode("[$draft,$preview]")
         assertEquals("0.0.0", info.version)
         assertEquals(0, info.downloads.size)
     }
