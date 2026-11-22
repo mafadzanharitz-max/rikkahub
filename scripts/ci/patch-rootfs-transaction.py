@@ -207,11 +207,14 @@ def apply(root: Path) -> None:
     fun backupRecoveryRestoresRootfsAfterInterruptedActivation() {
         val linux = tmp.newFolder("linux")
         val backup = tmp.newFolder("backup")
+        File(backup, "bin").mkdirs()
+        File(backup, "bin/sh").writeText("shell")
         File(backup, "old-rootfs").writeText("old")
 
         createInstaller().recoverRootfsBackup(linux, backup)
 
         assertEquals("old", File(linux, "old-rootfs").readText())
+        assertTrue(WorkspaceManager.isUsableRootfs(linux))
         assertFalse(backup.exists())
     }
 
