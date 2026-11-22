@@ -304,6 +304,45 @@ def apply(root):
         }
     }
 
+    @Test
+    fun extractRejectsTraversalThroughEarlierSymlink() {
+        val archive = tmp.newFile("symlink-parent.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("real/", '5', ByteArray(0))
+            out.writeTarEntry("alias", '2', ByteArray(0), linkName = "real")
+            out.writeTarEntry("alias/escape.txt", '0', "escape".toByteArray())
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("safe-symlink-parent")
+        try {
+            createInstaller().extractTar(archive, target) {}
+            throw AssertionError("Expected symlink parent traversal rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertFalse(File(target, "real/escape.txt").exists())
+        }
+    }
+
+    @Test
+    fun extractRejectsOversizedMetadataEntry() {
+        val archive = tmp.newFile("oversized-metadata.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            val header = ByteArray(TAR_BLOCK)
+            "metadata".toByteArray().copyInto(header, 0)
+            (1024L * 1024 + 1).toString(8).padStart(11, '0')
+                .toByteArray().copyInto(header, 124)
+            header[156] = 'L'.code.toByte()
+            out.write(header)
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("safe-metadata")
+        try {
+            createInstaller().extractTar(archive, target) {}
+            throw AssertionError("Expected oversized metadata rejection")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("metadata"))
+        }
+    }
+
 '''
     if "extractRejectsPathTraversal" not in tests:
         marker = "    private fun createInstaller()"
