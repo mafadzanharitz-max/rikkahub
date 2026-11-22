@@ -24,7 +24,7 @@ def apply(root):
             if (space < 0) break
             val length = text.substring(index, space).toIntOrNull() ?: break
             val end = (index + length).coerceAtMost(text.length)
-            val record = text.substring(space + 1, end).trimEnd('\\n')
+            val record = text.substring(space + 1, end).trimEnd('\n')
             val equals = record.indexOf('=')
             if (equals > 0) {
                 result[record.substring(0, equals)] = record.substring(equals + 1)
@@ -53,7 +53,7 @@ def apply(root):
             }
             val end = index + length
             val recordEnd = end - 1
-            require(recordEnd > space && bytes[recordEnd] == '\\n'.code.toByte()) {
+            require(recordEnd > space && bytes[recordEnd] == '\n'.code.toByte()) {
                 "Malformed RootFS PAX record terminator"
             }
             val recordStart = space + 1
