@@ -140,7 +140,7 @@ class ResponseAPI(
         }
 
             val bodyStr = response.body.string()
-            Log.i(TAG, "generateText: $bodyStr")
+            // Do not log provider response bodies: they may contain user prompts or model output.
             val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
             parseResponseOutput(bodyJson)
         }
@@ -182,7 +182,7 @@ class ResponseAPI(
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
+                Log.d(TAG, "onEvent: type=$type")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
@@ -193,7 +193,6 @@ class ResponseAPI(
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                t?.printStackTrace()
                 val failure = when {
                     response != null && !response.isSuccessful -> ProviderHttpException(response.code, t)
                     t != null -> t
