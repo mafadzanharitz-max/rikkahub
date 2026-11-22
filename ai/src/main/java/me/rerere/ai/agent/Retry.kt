@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import me.rerere.ai.provider.ProviderHttpException
 import java.io.IOException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -11,12 +12,15 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 请求模型失败时的重试策略：最多重试 [maxRetries] 次，等待时间从 [initialDelay] 开始每次翻倍。
  *
- * 默认只重试 [IOException]，也就是连不上、超时、读到一半断开这类网络故障。
+ * 默认重试网络 I/O 故障，以及被明确分类为临时故障的 HTTP 响应。
+ * 认证、限流、无效请求和其他 HTTP 错误不会自动重试。
  */
 data class RetryPolicy(
     val maxRetries: Int,
     val initialDelay: Duration = 1.seconds,
-    val retryOn: (Throwable) -> Boolean = { it is IOException },
+    val retryOn: (Throwable) -> Boolean = {
+        it is IOException || (it is ProviderHttpException && it.fallbackEligible)
+    },
 ) {
     companion object {
         val NONE = RetryPolicy(maxRetries = 0)
