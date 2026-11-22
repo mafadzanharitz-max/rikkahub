@@ -482,7 +482,12 @@ private fun SecretTextField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
-                Icon(if (visible) HugeIcons.ViewOff else HugeIcons.View, contentDescription = null)
+                Icon(
+                    if (visible) HugeIcons.ViewOff else HugeIcons.View,
+                    contentDescription = stringResource(
+                        if (visible) R.string.common_hide_password else R.string.common_show_password
+                    ),
+                )
             }
         },
     )

@@ -225,7 +225,9 @@ fun SettingPreferencesNetworkPage(vm: SettingVM = koinViewModel()) {
                                     } else {
                                         HugeIcons.View
                                     },
-                                    contentDescription = null,
+                                    contentDescription = stringResource(
+                                        if (proxyPasswordVisible) R.string.common_hide_password else R.string.common_show_password
+                                    ),
                                 )
                             }
                         },

@@ -218,11 +218,11 @@ fun WorkspaceDetailPage(id: String) {
                         }
                     }
                     IconButton(onClick = { vm.refresh() }) {
-                        Icon(HugeIcons.Refresh01, contentDescription = null)
+                        Icon(HugeIcons.Refresh01, contentDescription = stringResource(R.string.common_refresh))
                     }
                     if (state.workspace?.supportsTerminal() == true) {
                         IconButton(onClick = { navController.navigate(Screen.WorkspaceTerminal(id)) }) {
-                            Icon(HugeIcons.ComputerTerminal01, contentDescription = null)
+                            Icon(HugeIcons.ComputerTerminal01, contentDescription = stringResource(R.string.workspace_terminal_title))
                         }
                     }
                 },
@@ -846,7 +846,7 @@ private fun WorkspaceFilesPage(
                 colors = CustomColors.floatingToolbarColors,
                 leadingContent = {
                     IconButton(onClick = { exitSelection() }) {
-                        Icon(HugeIcons.Cancel01, contentDescription = "取消多选")
+                        Icon(HugeIcons.Cancel01, contentDescription = stringResource(R.string.common_cancel))
                     }
                 },
                 trailingContent = {
@@ -926,7 +926,7 @@ private fun WorkspacePathBar(
                 enabled = canGoUp,
                 onClick = onGoUp,
             ) {
-                Icon(HugeIcons.ArrowTurnBackward, contentDescription = null)
+                Icon(HugeIcons.ArrowTurnBackward, contentDescription = stringResource(R.string.common_go_up))
             }
             Text(
                 text = path.ifBlank { "/" },
@@ -1018,7 +1018,7 @@ private fun WorkspaceFileItem(
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = if (entry.isDirectory) null else onLongClick,
-                onLongClickLabel = if (entry.isDirectory) null else "选择文件",
+                onLongClickLabel = if (entry.isDirectory) null else stringResource(R.string.media_creation_page_select),
             ),
         shape = shape,
         color = containerColor,

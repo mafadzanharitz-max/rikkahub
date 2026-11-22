@@ -232,7 +232,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                 shareSheetState.show(provider)
                             }
                         ) {
-                            Icon(HugeIcons.Share01, null)
+                            Icon(HugeIcons.Share01, stringResource(R.string.common_share))
                         }
                     }
                 }
@@ -366,7 +366,7 @@ private fun SettingProviderConfigPage(
                 colors = CustomColors.floatingToolbarColors,
                 leadingContent = {
                     IconButton(onClick = { showTestDialog = true }) {
-                        Icon(HugeIcons.Connect, null)
+                        Icon(HugeIcons.Connect, stringResource(R.string.setting_provider_page_test_connection))
                     }
 
                     if (!internalProvider.builtIn) {
@@ -949,7 +949,7 @@ private fun ModelPicker(
                         onClick = onRefresh,
                         enabled = !remoteModels.loading,
                     ) {
-                        Icon(HugeIcons.Refresh01, contentDescription = "Refresh")
+                        Icon(HugeIcons.Refresh01, contentDescription = stringResource(R.string.common_refresh))
                     }
 
                     val unselectedCount = filteredModels.count { model ->
@@ -1557,7 +1557,7 @@ private fun ProviderOverrideSettings(
                                 showProviderConfig = true
                             }
                         ) {
-                            Icon(HugeIcons.Tools, contentDescription = "Edit override")
+                            Icon(HugeIcons.Tools, contentDescription = stringResource(R.string.setting_provider_page_configure_provider_override))
                         }
                         IconButton(
                             onClick = {

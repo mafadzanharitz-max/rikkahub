@@ -1881,4 +1881,9 @@
   <string name="backup_page_import_deepseek_complete">اكتمل استيراد DeepSeek</string>
   <string name="backup_page_import_deepseek_summary">المحادثات المستوردة: %1$d\nالمحادثات الموجودة التي تم تخطيها: %2$d\nالمحادثات الفارغة التي تم تخطيها: %3$d\nالمرفقات المفقودة من التصدير أو التي تعذّر استيرادها: %4$d. تم الاحتفاظ بأسماء ملفاتها كعناصر نائبة.</string>
   <string name="backup_page_import_deepseek_missing_attachment">[مرفق مفقود من التصدير أو تعذّر استيراده: %1$s]</string>
+  <string name="common_show_password">إظهار كلمة المرور</string>
+  <string name="common_hide_password">إخفاء كلمة المرور</string>
+  <string name="common_refresh">تحديث</string>
+  <string name="common_go_up">الانتقال إلى المستوى الأعلى</string>
+  <string name="setting_mcp_page_add_server">إضافة خادم MCP</string>
 </resources>

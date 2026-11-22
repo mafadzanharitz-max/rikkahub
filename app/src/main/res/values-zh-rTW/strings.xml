@@ -1881,4 +1881,9 @@
   <string name="backup_page_import_deepseek_complete">DeepSeek 匯入完成</string>
   <string name="backup_page_import_deepseek_summary">已匯入 %1$d 個對話\n略過 %2$d 個已存在的對話\n略過 %3$d 個空對話\n%4$d 個附件未包含在匯出檔中或無法匯入，已保留檔案名稱提示。</string>
   <string name="backup_page_import_deepseek_missing_attachment">[附件未包含在匯出檔中或無法匯入：%1$s]</string>
+  <string name="common_show_password">顯示密碼</string>
+  <string name="common_hide_password">隱藏密碼</string>
+  <string name="common_refresh">重新整理</string>
+  <string name="common_go_up">返回上一層</string>
+  <string name="setting_mcp_page_add_server">新增 MCP 伺服器</string>
 </resources>

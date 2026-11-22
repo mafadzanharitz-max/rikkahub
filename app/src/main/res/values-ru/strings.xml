@@ -1883,4 +1883,9 @@
   <string name="backup_page_import_deepseek_complete">Импорт из DeepSeek завершён</string>
   <string name="backup_page_import_deepseek_summary">Импортировано бесед: %1$d\nПропущено существующих бесед: %2$d\nПропущено пустых бесед: %3$d\nВложений, отсутствующих в экспорте или не импортированных: %4$d. Их имена файлов сохранены как заполнители.</string>
   <string name="backup_page_import_deepseek_missing_attachment">[Вложение отсутствует в экспорте или его не удалось импортировать: %1$s]</string>
+  <string name="common_show_password">Показать пароль</string>
+  <string name="common_hide_password">Скрыть пароль</string>
+  <string name="common_refresh">Обновить</string>
+  <string name="common_go_up">Перейти на уровень выше</string>
+  <string name="setting_mcp_page_add_server">Добавить сервер MCP</string>
 </resources>

@@ -30,4 +30,6 @@
   <string name="image_crop_original">オリジナル</string>
   <string name="image_crop_load_failed">画像を読み込めませんでした</string>
   <string name="image_crop_failed">画像をトリミングできませんでした</string>
+  <string name="select_expand_options">オプションを展開</string>
+  <string name="select_collapse_options">オプションを折りたたむ</string>
 </resources>

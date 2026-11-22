@@ -1883,4 +1883,9 @@ mDNSアドレス: .localホスト名を使用し、IPを知らなくても同じ
   <string name="backup_page_import_deepseek_complete">DeepSeekのインポートが完了しました</string>
   <string name="backup_page_import_deepseek_summary">インポートされた会話: %1$d\n既存の会話のスキップ: %2$d\n空の会話のスキップ: %3$d\nエクスポートに含まれていない、またはインポートできなかった添付ファイル: %4$d。ファイル名はプレースホルダーとして保持されています。</string>
   <string name="backup_page_import_deepseek_missing_attachment">[エクスポートに存在しないかインポートできなかった添付ファイル: %1$s]</string>
+  <string name="common_show_password">パスワードを表示</string>
+  <string name="common_hide_password">パスワードを非表示</string>
+  <string name="common_refresh">更新</string>
+  <string name="common_go_up">1 つ上の階層へ</string>
+  <string name="setting_mcp_page_add_server">MCP サーバーを追加</string>
 </resources>

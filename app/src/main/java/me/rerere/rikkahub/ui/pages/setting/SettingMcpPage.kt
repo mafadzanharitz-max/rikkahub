@@ -108,7 +108,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                             showImportDialog = true
                         }
                     ) {
-                        Icon(HugeIcons.FileImport, null)
+                        Icon(HugeIcons.FileImport, stringResource(R.string.setting_mcp_page_import_title))
                     }
                     IconButton(
                         onClick = {
@@ -120,7 +120,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                             navController.navigate(Screen.SettingMcpDetail(serverId = config.id.toString()))
                         }
                     ) {
-                        Icon(HugeIcons.Add01, null)
+                        Icon(HugeIcons.Add01, stringResource(R.string.setting_mcp_page_add_server))
                     }
                 },
                 scrollBehavior = scrollBehavior,

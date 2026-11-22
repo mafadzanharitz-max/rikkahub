@@ -30,4 +30,6 @@
   <string name="image_crop_original">الأصلي</string>
   <string name="image_crop_load_failed">تعذّر تحميل الصورة</string>
   <string name="image_crop_failed">تعذّر قص الصورة</string>
+  <string name="select_expand_options">توسيع الخيارات</string>
+  <string name="select_collapse_options">طي الخيارات</string>
 </resources>

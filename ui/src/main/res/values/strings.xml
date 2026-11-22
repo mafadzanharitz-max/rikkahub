@@ -30,4 +30,6 @@
   <string name="image_crop_original">Original</string>
   <string name="image_crop_load_failed">Couldn\'t load the image</string>
   <string name="image_crop_failed">Couldn\'t crop the image</string>
+  <string name="select_expand_options">Expand options</string>
+  <string name="select_collapse_options">Collapse options</string>
 </resources>

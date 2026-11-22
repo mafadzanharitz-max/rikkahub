@@ -1881,4 +1881,9 @@
   <string name="backup_page_import_deepseek_complete">DeepSeek-Import abgeschlossen</string>
   <string name="backup_page_import_deepseek_summary">Importierte Unterhaltungen: %1$d\nÜbersprungene vorhandene Unterhaltungen: %2$d\nÜbersprungene leere Unterhaltungen: %3$d\nIm Export fehlende oder nicht importierbare Anhänge: %4$d. Ihre Dateinamen wurden als Platzhalter beibehalten.</string>
   <string name="backup_page_import_deepseek_missing_attachment">[Anhang fehlt im Export oder konnte nicht importiert werden: %1$s]</string>
+  <string name="common_show_password">Passwort anzeigen</string>
+  <string name="common_hide_password">Passwort ausblenden</string>
+  <string name="common_refresh">Aktualisieren</string>
+  <string name="common_go_up">Eine Ebene nach oben</string>
+  <string name="setting_mcp_page_add_server">MCP-Server hinzufügen</string>
 </resources>

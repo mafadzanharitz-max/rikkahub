@@ -199,7 +199,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(HugeIcons.Cancel01, contentDescription = "Clear")
+                            Icon(HugeIcons.Cancel01, contentDescription = stringResource(R.string.skills_page_clear_search))
                         }
                     }
                 },
@@ -411,7 +411,7 @@ private fun ImportProviderButton(
             showImportDialog = true
         }
     ) {
-        Icon(HugeIcons.FileImport, null)
+        Icon(HugeIcons.FileImport, stringResource(R.string.setting_provider_page_import_dialog_title))
     }
 
     if (showImportDialog) {
@@ -588,7 +588,7 @@ private fun AddButton(onAdd: (ProviderSetting) -> Unit) {
     IconButton(
         onClick = { showSheet = true }
     ) {
-        Icon(HugeIcons.Add01, "Add")
+        Icon(HugeIcons.Add01, stringResource(R.string.setting_provider_page_add_provider))
     }
 
     if (showSheet) {
