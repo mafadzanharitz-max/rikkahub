@@ -7,6 +7,9 @@ on:
   # 也支持手动触发
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # 检查过去 24 小时内是否有新提交，没有则跳过构建，避免重复打包
   check:
