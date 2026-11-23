@@ -106,6 +106,7 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
         raise ValueError("unsupported .ARM.attributes format")
 
     offset = 1
+    cpu_arches = []
     while offset < len(attributes):
         if offset + 4 > len(attributes):
             raise ValueError("truncated ARM vendor subsection")
@@ -138,7 +139,9 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
                             arch, _ = read_uleb128(
                                 attributes, attr_cursor, subsection_end
                             )
-                            return arch
+                            cpu_arches.append(arch)
+                            # Later standard attributes are not needed for ABI validation.
+                            break
                         else:
                             raise ValueError(
                                 f"cannot safely parse ARM attribute tag {tag} before Tag_CPU_arch"
@@ -146,7 +149,11 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
                 cursor = subsection_end
         offset = vendor_end
 
-    raise ValueError("AEABI Tag_CPU_arch attribute not found")
+    if not cpu_arches:
+        raise ValueError("AEABI Tag_CPU_arch attribute not found")
+    if any(arch != cpu_arches[0] for arch in cpu_arches):
+        raise ValueError(f"conflicting AEABI Tag_CPU_arch attributes: {cpu_arches}")
+    return cpu_arches[0]
 
 
 def main() -> None:
