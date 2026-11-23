@@ -251,24 +251,26 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
                 .get()
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
-        }
+            val response = client.newCall(request).await()
+            response.use { response ->
+                if (!response.isSuccessful) {
+                    throw ProviderHttpException(response.code)
+                }
 
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-            val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                val data = bodyJson["data"]?.jsonArray ?: return@use emptyList()
 
-            data.mapNotNull { modelJson ->
-                val modelObj = modelJson.jsonObject
-                val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val displayName = modelObj["display_name"]?.jsonPrimitive?.contentOrNull ?: id
+                data.mapNotNull { modelJson ->
+                    val modelObj = modelJson.jsonObject
+                    val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val displayName = modelObj["display_name"]?.jsonPrimitive?.contentOrNull ?: id
 
-                Model(
-                    modelId = id,
-                    displayName = displayName,
-                )
+                    Model(
+                        modelId = id,
+                        displayName = displayName,
+                    )
+                }
             }
         }
 
