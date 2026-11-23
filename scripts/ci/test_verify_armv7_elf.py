@@ -117,7 +117,20 @@ class ElfParserTests(unittest.TestCase):
                 for name in REQUIRED:
                     archive.writestr(f"lib/arm64-v8a/{name}", make_elf(ELF.ARMV7_ARCH))
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
-                with self.assertRaisesRegex(SystemExit, "unexpected ABI paths"):
+                with self.assertRaisesRegex(SystemExit, "unexpected native library paths"):
+                    ELF.main()
+
+    def test_apk_rejects_nested_native_library_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "nested.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    archive.writestr(
+                        f"lib/armeabi-v7a/nested/{name}",
+                        make_elf(ELF.ARMV7_ARCH),
+                    )
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(SystemExit, "unexpected native library paths"):
                     ELF.main()
 
     def test_apk_rejects_missing_required_library(self):
