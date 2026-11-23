@@ -1,6 +1,7 @@
 package me.rerere.ai.provider.providers.google
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -28,6 +29,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ProviderHttpException
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.TextGenerationResult
@@ -52,8 +54,6 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.logRequestBody
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
-import me.rerere.ai.util.parseErrorDetail
-import me.rerere.ai.util.stringSafe
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
@@ -107,7 +107,7 @@ internal class InteractionsAPI(
         // await() waits for the response headers; reading the body can still block.
         client.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
-                throw Exception("Failed to get response: ${response.code} ${response.body.string()}")
+                throw ProviderHttpException(response.code)
             }
             val bodyJson = json.parseToJsonElement(response.body.string()).jsonObject
             parseInteraction(bodyJson, fallbackModel = params.model.modelId)
@@ -129,7 +129,7 @@ internal class InteractionsAPI(
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
                 trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    Log.w(TAG, "onEvent: chunk dropped (${e?.javaClass?.simpleName ?: "unknown"})")
                 }
             }
         }
@@ -141,32 +141,28 @@ internal class InteractionsAPI(
                 type: String?,
                 data: String
             ) {
-                Log.d(TAG, "onEvent: $id/$type $data")
+                Log.d(TAG, "onEvent: $id/$type")
                 try {
                     val result = decoder.accept(SseEvent(id = id, event = type, data = data))
                     sendChunks(result.chunks)
                     if (result.completed) close()
+                } catch (e: CancellationException) {
+                    close(e)
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to parse stream event: $data", e)
+                    Log.w(TAG, "Failed to parse stream event (${e.javaClass.simpleName})")
                     close(e)
                 }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                var exception = t
-
-                val bodyRaw = response?.body?.stringSafe()
-                try {
-                    if (!bodyRaw.isNullOrBlank()) {
-                        exception = json.parseToJsonElement(bodyRaw).parseErrorDetail()
-                    } else if (t == null && response != null) {
-                        exception = Exception("Unknown error: ${response.code}")
-                    }
-                } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                } finally {
-                    close(exception ?: Exception("Stream failed"))
+                val exception = when {
+                    response != null && !response.isSuccessful ->
+                        ProviderHttpException(response.code, t)
+                    t != null -> t
+                    response != null -> ProviderHttpException(response.code)
+                    else -> Exception("Stream failed")
                 }
+                close(exception)
             }
 
             override fun onClosed(eventSource: EventSource) {
