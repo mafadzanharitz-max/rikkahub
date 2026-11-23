@@ -162,25 +162,27 @@ class OpenAIProvider(
             .build()
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
+        response.use { response ->
+            if (!response.isSuccessful) {
+                throw ProviderHttpException(response.code)
+            }
+
+            val bodyStr = response.body?.string() ?: ""
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+            val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
+            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
+
+            val embeddings = data.map { embeddingJson ->
+                val embeddingArray = embeddingJson.jsonObject["embedding"]?.jsonArray
+                    ?: error("No embedding in response")
+                embeddingArray.map { it.jsonPrimitive.content.toFloat() }
+            }
+
+            EmbeddingGenerationResult(
+                model = model,
+                embeddings = embeddings
+            )
         }
-
-        val bodyStr = response.body?.string() ?: ""
-        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
-        val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: params.model.modelId
-
-        val embeddings = data.map { embeddingJson ->
-            val embeddingArray = embeddingJson.jsonObject["embedding"]?.jsonArray
-                ?: error("No embedding in response")
-            embeddingArray.map { it.jsonPrimitive.content.toFloat() }
-        }
-
-        EmbeddingGenerationResult(
-            model = model,
-            embeddings = embeddings
-        )
     }
 
     override suspend fun generateImage(
@@ -224,10 +226,12 @@ class OpenAIProvider(
 
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
-            if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
-        }
-            parseImageResponse(response.body.string())
+            response.use { response ->
+                if (!response.isSuccessful) {
+                    throw ProviderHttpException(response.code)
+                }
+                parseImageResponse(response.body.string())
+            }
         }
 
         items.forEach { emit(it) }
@@ -295,10 +299,12 @@ class OpenAIProvider(
 
         val items = withContext(Dispatchers.IO) {
             val response = client.newCall(request).await()
-            if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
-        }
-            parseImageResponse(response.body.string())
+            response.use { response ->
+                if (!response.isSuccessful) {
+                    throw ProviderHttpException(response.code)
+                }
+                parseImageResponse(response.body.string())
+            }
         }
 
         items.forEach { emit(it) }
@@ -349,10 +355,12 @@ class OpenAIProvider(
             .build()
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
+        response.use { response ->
+            if (!response.isSuccessful) {
+                throw ProviderHttpException(response.code)
+            }
+            parseImageResponse(response.body.string())
         }
-        parseImageResponse(response.body.string())
     }
 
     private suspend fun parseImageResponse(bodyStr: String): List<ImageGenerationItem> {
@@ -384,18 +392,20 @@ class OpenAIProvider(
             .build()
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
+        return response.use { response ->
+            if (!response.isSuccessful) {
+                throw ProviderHttpException(response.code)
+            }
+
+            val body = response.body
+            val mimeType = body.contentType()?.toString() ?: "image/png"
+            val base64 = Base64.encode(body.bytes())
+
+            ImageGenerationItem(
+                data = base64,
+                mimeType = mimeType
+            )
         }
-
-        val body = response.body
-        val mimeType = body.contentType()?.toString() ?: "image/png"
-        val base64 = Base64.encode(body.bytes())
-
-        return ImageGenerationItem(
-            data = base64,
-            mimeType = mimeType
-        )
     }
 
     private fun File.imageMediaType(): String = when (extension.lowercase()) {
