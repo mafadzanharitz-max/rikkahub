@@ -70,22 +70,24 @@ class OpenAIProvider(
                 .build()
 
             val response = client.newCall(request).await()
-            if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
-        }
+            response.use { response ->
+                if (!response.isSuccessful) {
+                    throw ProviderHttpException(response.code)
+                }
 
-            val bodyStr = response.body?.string() ?: ""
-            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-            val data = bodyJson["data"]?.jsonArray ?: return@withContext emptyList()
+                val bodyStr = response.body?.string() ?: ""
+                val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+                val data = bodyJson["data"]?.jsonArray ?: return@use emptyList()
 
-            data.mapNotNull { modelJson ->
-                val modelObj = modelJson.jsonObject
-                val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                data.mapNotNull { modelJson ->
+                    val modelObj = modelJson.jsonObject
+                    val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
-                Model(
-                    modelId = id,
-                    displayName = id,
-                )
+                    Model(
+                        modelId = id,
+                        displayName = id,
+                    )
+                }
             }
         }
 
