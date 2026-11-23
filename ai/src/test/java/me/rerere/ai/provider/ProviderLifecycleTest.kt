@@ -24,7 +24,7 @@ class ProviderLifecycleTest {
         val closed = AtomicBoolean(false)
         val provider = GoogleProvider(clientReturningError(closed))
         val failure = runCatching {
-            provider.listModels(ProviderSetting.Google())
+            provider.listModels(ProviderSetting.Google(apiKey = "test-key"))
         }.exceptionOrNull()
 
         assertTrue("Expected ProviderHttpException, got $failure", failure is ProviderHttpException)
@@ -37,7 +37,7 @@ class ProviderLifecycleTest {
         val closed = AtomicBoolean(false)
         val provider = ClaudeProvider(clientReturningError(closed))
         val failure = runCatching {
-            provider.listModels(ProviderSetting.Claude())
+            provider.listModels(ProviderSetting.Claude(apiKey = "test-key"))
         }.exceptionOrNull()
 
         assertTrue("Expected ProviderHttpException, got $failure", failure is ProviderHttpException)
