@@ -212,22 +212,24 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         )
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
+        response.use { response ->
+            if (!response.isSuccessful) {
+                throw ProviderHttpException(response.code)
+            }
+
+            val bodyStr = response.body?.string() ?: ""
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+            val candidate = bodyJson["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
+                ?: error("No candidates in response")
+            TextGenerationResult(
+                id = Uuid.random().toString(),
+                model = params.model.modelId,
+                message = parseMessage(candidate),
+                finishReason = candidate["finishReason"]?.jsonPrimitive?.contentOrNull,
+                usage = parseUsageMeta(bodyJson["usageMetadata"] as? JsonObject),
+            )
         }
-
-        val bodyStr = response.body?.string() ?: ""
-        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-
-        val candidate = bodyJson["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-            ?: error("No candidates in response")
-        TextGenerationResult(
-            id = Uuid.random().toString(),
-            model = params.model.modelId,
-            message = parseMessage(candidate),
-            finishReason = candidate["finishReason"]?.jsonPrimitive?.contentOrNull,
-            usage = parseUsageMeta(bodyJson["usageMetadata"] as? JsonObject),
-        )
     }
 
     override suspend fun streamText(
