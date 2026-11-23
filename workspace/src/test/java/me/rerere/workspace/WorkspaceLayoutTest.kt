@@ -61,6 +61,8 @@ class WorkspaceLayoutTest {
         assertThrows(IllegalArgumentException::class.java) {
             manager.ensureWorkspace("..")
         }
+        assertFalse(File(baseDir, "files").exists())
+        assertFalse(File(baseDir, "linux").exists())
         assertFalse(File(baseDir.parentFile, "files").exists())
         assertFalse(File(baseDir.parentFile, "linux").exists())
     }
