@@ -51,6 +51,21 @@ class WorkspaceLayoutTest {
     }
 
     @Test
+    fun dotSegmentWorkspaceRootsAreRejectedBeforeFilesystemAccess() {
+        val baseDir = tempFolder.newFolder("workspace-root-validation")
+        val manager = WorkspaceManager(baseDir = baseDir)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            manager.ensureWorkspace(".")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            manager.ensureWorkspace("..")
+        }
+        assertFalse(File(baseDir.parentFile, "files").exists())
+        assertFalse(File(baseDir.parentFile, "linux").exists())
+    }
+
+    @Test
     fun commandsFailWhenWorkspaceMountIsUnavailable() {
         val manager = WorkspaceManager(baseDir = tempFolder.newFolder("workspaces"))
         manager.ensureWorkspace("ws")
