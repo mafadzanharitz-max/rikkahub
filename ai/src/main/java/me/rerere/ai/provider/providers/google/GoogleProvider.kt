@@ -274,7 +274,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
                 trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    Log.w(TAG, "onEvent: chunk dropped (${e?.javaClass?.simpleName ?: "unknown"})")
                 }
             }
         }
@@ -293,7 +293,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                     sendChunks(result.chunks)
                     if (result.completed) close()
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Failed to parse provider stream event", e)
+                    Log.w(TAG, "Failed to parse provider stream event (${e.javaClass.simpleName})")
                     close(e)
                 }
             }
@@ -317,7 +317,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             }
 
             override fun onClosed(eventSource: EventSource) {
-                println("[onClosed] 连接已关闭")
+                
                 sendChunks(decoder.onClosed())
                 close()
             }
@@ -326,7 +326,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
         val eventSource = client.newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource")
+            
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
