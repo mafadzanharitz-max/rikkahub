@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.grok
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -96,9 +97,23 @@ class GrokProvider(
     override suspend fun listModels(providerSetting: ProviderSetting.Grok): List<Model> = coroutineScope {
         // 两个目录拿到一个就够用
         val cliRequest = async {
-            runCatching { getJson(providerSetting, "$GROK_CLI_BASE_URL/models-v2", grokCli = true) }
+            try {
+                Result.success(getJson(providerSetting, "$GROK_CLI_BASE_URL/models-v2", grokCli = true))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
-        val apiRequest = async { runCatching { getJson(providerSetting, "$XAI_BASE_URL/models") } }
+        val apiRequest = async {
+            try {
+                Result.success(getJson(providerSetting, "$XAI_BASE_URL/models"))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
         val cli = cliRequest.await()
         val api = apiRequest.await()
         if (cli.isFailure && api.isFailure) throw cli.exceptionOrNull()!!
