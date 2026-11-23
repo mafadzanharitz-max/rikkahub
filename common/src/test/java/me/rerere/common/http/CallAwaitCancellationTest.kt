@@ -1,5 +1,6 @@
 package me.rerere.common.http
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -37,7 +38,7 @@ class CallAwaitCancellationTest {
                 .build()
         )
 
-        val awaiting = launch {
+        val awaiting = launch(Dispatchers.IO) {
             call.await().close()
         }
 
