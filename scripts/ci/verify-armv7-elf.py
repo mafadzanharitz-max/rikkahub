@@ -171,12 +171,13 @@ def main() -> None:
             if not libraries:
                 fail("APK contains no native shared libraries")
 
-            wrong_abi = [
-                name for name in libraries
-                if not name.startswith("lib/armeabi-v7a/")
-            ]
-            if wrong_abi:
-                fail(f"unexpected ABI paths: {wrong_abi}")
+            wrong_paths = []
+            for name in libraries:
+                parts = PurePosixPath(name).parts
+                if len(parts) != 3 or parts[:2] != ("lib", "armeabi-v7a"):
+                    wrong_paths.append(name)
+            if wrong_paths:
+                fail(f"unexpected native library paths: {wrong_paths}")
 
             names = {PurePosixPath(name).name for name in libraries}
             missing = sorted(REQUIRED_LIBRARIES - names)
