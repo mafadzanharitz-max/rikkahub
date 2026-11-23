@@ -310,27 +310,29 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         logRequestBody(TAG, "generateText") { json.encodeToString(requestBody) }
 
         val response = client.newCall(request).await()
-        if (!response.isSuccessful) {
-            throw ProviderHttpException(response.code)
+        response.use { response ->
+            if (!response.isSuccessful) {
+                throw ProviderHttpException(response.code)
+            }
+
+            val bodyStr = response.body?.string() ?: ""
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+
+            // 从 JsonObject 中提取必要的信息
+            val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
+            val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
+            val content = bodyJson["content"]?.jsonArray ?: JsonArray(emptyList())
+            val stopReason = bodyJson["stop_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+            val usage = parseTokenUsage(bodyJson)
+
+            TextGenerationResult(
+                id = id,
+                model = model,
+                message = parseMessage(content),
+                finishReason = stopReason,
+                usage = usage
+            )
         }
-
-        val bodyStr = response.body?.string() ?: ""
-        val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-
-        // 从 JsonObject 中提取必要的信息
-        val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
-        val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
-        val content = bodyJson["content"]?.jsonArray ?: JsonArray(emptyList())
-        val stopReason = bodyJson["stop_reason"]?.jsonPrimitive?.contentOrNull ?: "unknown"
-        val usage = parseTokenUsage(bodyJson)
-
-        return TextGenerationResult(
-            id = id,
-            model = model,
-            message = parseMessage(content),
-            finishReason = stopReason,
-            usage = usage
-        )
     }
 
     override suspend fun streamText(
