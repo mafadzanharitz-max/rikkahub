@@ -149,10 +149,14 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                     .build()
             )
             val response = client.newCall(request).await()
-            if (response.isSuccessful) {
+            response.use { response ->
+                if (!response.isSuccessful) {
+                    throw ProviderHttpException(response.code)
+                }
+
                 val body = response.body?.string() ?: error("empty body")
                 val bodyObject = json.parseToJsonElement(body).jsonObject
-                val models = bodyObject["models"]?.jsonArray ?: return@withContext emptyList()
+                val models = bodyObject["models"]?.jsonArray ?: return@use emptyList()
 
                 models.mapNotNull {
                     val modelObject = it.jsonObject
@@ -171,8 +175,6 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                         type = if ("generateContent" in supportedGenerationMethods) ModelType.CHAT else ModelType.EMBEDDING,
                     )
                 }
-            } else {
-                emptyList()
             }
         }
 
