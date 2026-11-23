@@ -3,6 +3,8 @@ package me.rerere.ai.provider
 import kotlinx.coroutines.runBlocking
 import me.rerere.ai.provider.providers.claude.ClaudeProvider
 import me.rerere.ai.provider.providers.google.GoogleProvider
+import me.rerere.ai.provider.providers.openai.OpenAIProvider
+import me.rerere.ai.ui.UIMessage
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -29,6 +31,23 @@ class ProviderLifecycleTest {
         assertTrue("Expected ProviderHttpException, got $failure", failure is ProviderHttpException)
         assertEquals(401, (failure as ProviderHttpException).statusCode)
         assertTrue("Google response body must be closed on HTTP failure", closed.get())
+    }
+
+    @Test
+    fun `OpenAI chat completion propagates HTTP errors and closes response body`() = runBlocking {
+        val closed = AtomicBoolean(false)
+        val provider = OpenAIProvider(clientReturningError(closed))
+        val failure = runCatching {
+            provider.generateText(
+                ProviderSetting.OpenAI(apiKey = "test-key"),
+                listOf(UIMessage.user("hello")),
+                TextGenerationParams(model = Model(modelId = "test-model")),
+            )
+        }.exceptionOrNull()
+
+        assertTrue("Expected ProviderHttpException, got $failure", failure is ProviderHttpException)
+        assertEquals(401, (failure as ProviderHttpException).statusCode)
+        assertTrue("OpenAI response body must be closed on HTTP failure", closed.get())
     }
 
     @Test
