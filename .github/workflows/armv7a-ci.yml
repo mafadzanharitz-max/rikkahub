@@ -190,6 +190,7 @@ jobs:
       - name: Compile, test, and build Debug plus optimized Release
         run: |
           ./gradlew :app:assembleGithubDebug :app:testGithubDebugUnitTest \
+            :ai:testDebugUnitTest :common:testDebugUnitTest \
             :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
             :app:assembleGithubRelease \
             --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
