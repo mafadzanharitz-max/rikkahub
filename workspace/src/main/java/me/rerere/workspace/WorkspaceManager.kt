@@ -313,7 +313,7 @@ class WorkspaceManager(
     }
 
     private fun requireValidRoot(root: String) {
-        require(root.matches(ROOT_NAME_REGEX)) {
+        require(root.matches(ROOT_NAME_REGEX) && root != "." && root != "..") {
             "Invalid workspace root name: $root"
         }
     }
