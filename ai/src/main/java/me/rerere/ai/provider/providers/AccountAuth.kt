@@ -52,9 +52,14 @@ private class AccountTokenAuthenticator(
         if (response.priorResponse != null) return null
         val rejected = response.request.header("Authorization")?.removePrefix("Bearer ")
         // OkHttp 在自己的线程上同步调用 Authenticator
-        val credential = runCatching {
+        val credential = try {
             runBlocking { credentials.getCredential(tag.setting, rejectedAccessToken = rejected) }
-        }.getOrNull() ?: return null
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
+        } catch (_: Exception) {
+            return null
+        }
         if (credential.accessToken == rejected) return null
         return response.request.newBuilder()
             .apply { applyCredential(credential, tag.applyHeaders) }
