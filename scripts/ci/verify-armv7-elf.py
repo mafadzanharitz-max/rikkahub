@@ -61,7 +61,7 @@ def main() -> None:
 
                 if len(header) != ELF_HEADER_SIZE:
                     fail(f"{name}: truncated ELF32 header ({len(header)} bytes)")
-                if header[:4] != b"\\x7fELF":
+                if header[:4] != bytes((0x7F, 0x45, 0x4C, 0x46)):
                     fail(f"{name}: invalid ELF magic")
                 if header[4] != ELFCLASS32:
                     fail(f"{name}: expected ELFCLASS32, got {header[4]}")
