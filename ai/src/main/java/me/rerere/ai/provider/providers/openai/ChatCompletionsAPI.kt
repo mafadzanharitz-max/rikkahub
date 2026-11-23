@@ -167,7 +167,7 @@ class ChatCompletionsAPI(
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
                 trySend(chunk).onFailure { e ->
-                    Log.w(TAG, "onEvent: chunk dropped (${e?.message})")
+                    Log.w(TAG, "onEvent: chunk dropped (${e?.javaClass?.simpleName ?: "unknown"})")
                 }
             }
         }
@@ -207,7 +207,7 @@ class ChatCompletionsAPI(
         val eventSource = client.newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
+            
             eventSource.cancel()
         }
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
@@ -607,7 +607,7 @@ class ChatCompletionsAPI(
                                             put("url", encodedImage.base64)
                                         })
                                     }.onFailure {
-                                        it.printStackTrace()
+                                        Log.w(TAG, "encode image failed")
                                         put("type", "text")
                                         put("text", "")
                                     }
@@ -664,7 +664,7 @@ class ChatCompletionsAPI(
                                             put("url", encodedImage.base64)
                                         })
                                     }.onFailure {
-                                        it.printStackTrace()
+                                        Log.w(TAG, "encode image failed")
                                         put("type", "text")
                                         put("text", "")
                                     }
@@ -712,7 +712,7 @@ class ChatCompletionsAPI(
                                         put("url", encodedImage.base64)
                                     })
                                 }.onFailure {
-                                    Log.w(TAG, "encode tool result image failed", it)
+                                    Log.w(TAG, "encode tool result image failed")
                                     put("type", "text")
                                     put("text", "Error: Failed to encode image to base64")
                                 }
