@@ -11,6 +11,8 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.RouteActivity
 import java.io.File
 
+private val CAMERA_SHORTCUT_URI: Uri = Uri.parse("rikkahub://shortcut")
+
 class ShortcutHandlerActivity : ComponentActivity() {
     private var photoURI: Uri? = null
 
@@ -37,6 +39,14 @@ class ShortcutHandlerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // This activity is exported for the launcher shortcut. Do not let arbitrary
+        // explicit intents trigger a permission prompt or launch the camera.
+        if (intent.action != Intent.ACTION_VIEW || intent.data != CAMERA_SHORTCUT_URI) {
+            finish()
+            return
+        }
+
         requestPermissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
