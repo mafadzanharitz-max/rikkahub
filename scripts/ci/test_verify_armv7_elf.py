@@ -72,6 +72,10 @@ class ElfParserTests(unittest.TestCase):
     def test_rejects_non_armv7_architecture(self):
         self.assertEqual(9, ELF.arm_cpu_arch(make_elf(9), "fixture.so"))
 
+    def test_rejects_conflicting_file_architecture_attributes(self):
+        with self.assertRaisesRegex(ValueError, "conflicting AEABI Tag_CPU_arch"):
+            ELF.arm_cpu_arch(make_elf(ELF.ARMV7_ARCH, 9), "fixture.so")
+
     def test_rejects_truncated_elf_header(self):
         with self.assertRaisesRegex(ValueError, "truncated ELF header"):
             ELF.arm_cpu_arch(b"\x7fELF", "fixture.so")
