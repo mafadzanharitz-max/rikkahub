@@ -193,6 +193,12 @@ jobs:
             :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
             :app:assembleGithubRelease \
             --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+      - name: Validate actual ARMv7 ELF headers (Debug APK)
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/github/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          python3 scripts/ci/verify-armv7-elf.py "$APK"
       - name: Verify APK ABI and required native components
         run: |
           python3 - <<'PY'
@@ -258,6 +264,12 @@ jobs:
           path: app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Validate actual ARMv7 ELF headers (Release APK)
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/github/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          python3 scripts/ci/verify-armv7-elf.py "$APK"
       - name: Verify and report optimized release APK
         run: |
           python3 - <<'PY'
