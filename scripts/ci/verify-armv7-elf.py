@@ -53,7 +53,7 @@ def read_uleb128(data: bytes, offset: int, end: int) -> tuple[int, int]:
 
 
 def read_c_string(data: bytes, offset: int, end: int) -> tuple[str, int]:
-    terminator = data.find(b"\\0", offset, end)
+    terminator = data.find(b"\0", offset, end)
     if terminator < 0:
         raise ValueError("unterminated attribute string")
     return data[offset:terminator].decode("ascii"), terminator + 1
@@ -90,7 +90,7 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
         name_offset = section[0]
         if name_offset >= len(section_names):
             continue
-        end = section_names.find(b"\\0", name_offset)
+        end = section_names.find(b"\0", name_offset)
         if end < 0:
             continue
         if section_names[name_offset:end] == ARM_ATTRIBUTES_SECTION.encode("ascii"):
