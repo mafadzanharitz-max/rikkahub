@@ -297,11 +297,18 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         require(documentId.startsWith(DOC_PREFIX)) { "Invalid documentId: $documentId" }
         val rest = documentId.removePrefix(DOC_PREFIX)
         val idx = rest.indexOf('/')
-        return if (idx < 0) {
-            DocId(isRoot = false, root = rest, relPath = "")
-        } else {
-            DocId(isRoot = false, root = rest.substring(0, idx), relPath = rest.substring(idx + 1))
+        val root = if (idx < 0) rest else rest.substring(0, idx)
+        require(root.isNotBlank() && root != "." && root != "..") {
+            "Invalid workspace root: $root"
         }
+        require(allWorkspaces().any { it.root == root }) {
+            "Unknown or unavailable workspace: $root"
+        }
+        return DocId(
+            isRoot = false,
+            root = root,
+            relPath = if (idx < 0) "" else rest.substring(idx + 1),
+        )
     }
 
     private fun buildDocId(root: String, relPath: String): String =
