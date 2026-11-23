@@ -120,9 +120,8 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
                 if cursor + 4 > vendor_end:
                     raise ValueError("truncated ARM attribute subsection")
                 subsection_length = struct.unpack_from("<I", attributes, cursor)[0]
-                subsection_start = cursor - (cursor - (cursor - 0))  # replaced below
                 payload_start = cursor + 4
-                subsection_end = cursor - 0 + subsection_length
+                subsection_end = cursor + subsection_length
                 if subsection_length < 5 or subsection_end > vendor_end:
                     raise ValueError("invalid ARM attribute subsection length")
                 if subsection_tag == TAG_FILE:
