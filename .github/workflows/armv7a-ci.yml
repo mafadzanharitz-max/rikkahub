@@ -205,7 +205,8 @@ jobs:
               assert not wrong, f"Unexpected ABI entries: {wrong}"
               names = {pathlib.PurePosixPath(n).name for n in libs}
               required = {"libsimple.so", "libtermux.so", "libworkspace.so",
-                          "libproot_exec.so", "libproot_loader.so"}
+                          "libproot_exec.so", "libproot_loader.so",
+                          "libquickjs.so", "libsqlite3x.so"}
               assert required <= names, f"Missing native components: {sorted(required - names)}"
               print(f"Validated {len(libs)} ARMv7 ELF libraries in {apk}")
           PY
@@ -275,7 +276,8 @@ jobs:
               assert not wrong, f"Unexpected release ABI entries: {wrong}"
               names = {pathlib.PurePosixPath(n).name for n in libs}
               required = {"libsimple.so", "libtermux.so", "libworkspace.so",
-                          "libproot_exec.so", "libproot_loader.so"}
+                          "libproot_exec.so", "libproot_loader.so",
+                          "libquickjs.so", "libsqlite3x.so"}
               assert required <= names, f"Missing native components: {sorted(required - names)}"
               for name, raw, packed in entries:
                   if name.endswith(".dex"):
