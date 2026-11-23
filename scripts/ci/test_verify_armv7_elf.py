@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Standalone regression tests for verify-armv7-elf.py (no APK build required)."""
+
+from __future__ import annotations
+
+import importlib.util
+import struct
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
+
+SCRIPT = Path(__file__).with_name("verify-armv7-elf.py")
+SPEC = importlib.util.spec_from_file_location("verify_armv7_elf", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+ELF = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(ELF)
+
+REQUIRED = sorted(ELF.REQUIRED_LIBRARIES)
+
+
+def uleb(value: int) -> bytes:
+    out = bytearray()
+    while value >= 0x80:
+        out.append((value & 0x7F) | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+
+def arm_attributes(*architectures: int) -> bytes:
+    subsections = bytearray()
+    for architecture in architectures:
+        # Tag_File, followed by its length field and Tag_CPU_arch value.
+        payload = uleb(ELF.TAG_CPU_ARCH) + uleb(architecture)
+        subsection_length = 4 + len(payload)
+        subsections += uleb(ELF.TAG_FILE)
+        subsections += struct.pack("<I", subsection_length)
+        subsections += payload
+    vendor = b"aeabi\0" + bytes(subsections)
+    return b"A" + struct.pack("<I", 4 + len(vendor)) + vendor
+
+
+def make_elf(*architectures: int) -> bytes:
+    names = b"\0.shstrtab\0.ARM.attributes\0"
+    shstr_offset = ELF.ELF_HEADER_SIZE + 3 * ELF.ELF_SECTION_HEADER_SIZE
+    attr_offset = shstr_offset + len(names)
+    attrs = arm_attributes(*architectures)
+
+    header = bytearray(ELF.ELF_HEADER_SIZE)
+    header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
+    struct.pack_into("<HHI", header, 16, ELF.ET_DYN, ELF.EM_ARM, 1)
+    struct.pack_into("<I", header, 32, ELF.ELF_HEADER_SIZE)
+    struct.pack_into("<H", header, 40, ELF.ELF_HEADER_SIZE)
+    struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, 3, 1)
+
+    sections = bytearray(3 * ELF.ELF_SECTION_HEADER_SIZE)
+    # Null section is all zeroes.
+    struct.pack_into("<IIIIIIIIII", sections, 40,
+                     1, ELF.SHT_STRTAB, 0, 0, shstr_offset, len(names), 0, 0, 1, 0)
+    struct.pack_into("<IIIIIIIIII", sections, 80,
+                     11, 0x70000003, 0, 0, attr_offset, len(attrs), 0, 0, 1, 0)
+    return bytes(header + sections + names + attrs)
+
+
+class ElfParserTests(unittest.TestCase):
+    def test_accepts_armv7_shared_object(self):
+        self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(make_elf(ELF.ARMV7_ARCH), "fixture.so"))
+
+    def test_rejects_non_armv7_architecture(self):
+        self.assertEqual(9, ELF.arm_cpu_arch(make_elf(9), "fixture.so"))
+
+    def test_rejects_truncated_elf_header(self):
+        with self.assertRaisesRegex(ValueError, "truncated ELF header"):
+            ELF.arm_cpu_arch(b"\x7fELF", "fixture.so")
+
+    def test_rejects_section_table_out_of_bounds(self):
+        elf = bytearray(make_elf(ELF.ARMV7_ARCH))
+        struct.pack_into("<I", elf, 32, len(elf) + 100)
+        with self.assertRaisesRegex(ValueError, "out of bounds"):
+            ELF.arm_cpu_arch(bytes(elf), "fixture.so")
+
+    def test_rejects_missing_arm_attributes(self):
+        elf = bytearray(make_elf(ELF.ARMV7_ARCH))
+        # Rename .ARM.attributes so the section cannot be discovered.
+        elf[ELF.ELF_HEADER_SIZE + 80:ELF.ELF_HEADER_SIZE + 84] = struct.pack("<I", 0)
+        with self.assertRaisesRegex(ValueError, "missing .ARM.attributes"):
+            ELF.arm_cpu_arch(bytes(elf), "fixture.so")
+
+    def test_rejects_truncated_uleb128(self):
+        with self.assertRaisesRegex(ValueError, "truncated ULEB128"):
+            ELF.read_uleb128(b"\x80", 0, 1)
+
+    def test_rejects_oversized_uleb128(self):
+        with self.assertRaisesRegex(ValueError, "oversized ULEB128"):
+            ELF.read_uleb128(b"\x80\x80\x80\x80\x80", 0, 5)
+
+    def test_apk_accepts_all_required_armv7_libraries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "valid.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    archive.writestr(f"lib/armeabi-v7a/{name}", make_elf(ELF.ARMV7_ARCH))
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                ELF.main()
+
+    def test_apk_rejects_wrong_abi_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "wrong-abi.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    archive.writestr(f"lib/arm64-v8a/{name}", make_elf(ELF.ARMV7_ARCH))
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(SystemExit, "unexpected ABI paths"):
+                    ELF.main()
+
+    def test_apk_rejects_missing_required_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "missing.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED[1:]:
+                    archive.writestr(f"lib/armeabi-v7a/{name}", make_elf(ELF.ARMV7_ARCH))
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(SystemExit, "missing required native libraries"):
+                    ELF.main()
+
+    def test_apk_rejects_non_armv7_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "wrong-machine.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    archive.writestr(
+                        f"lib/armeabi-v7a/{name}",
+                        make_elf(9) if name == REQUIRED[0] else make_elf(ELF.ARMV7_ARCH),
+                    )
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(SystemExit, "expected Tag_CPU_arch=10"):
+                    ELF.main()
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
