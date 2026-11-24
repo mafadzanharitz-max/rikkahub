@@ -174,6 +174,9 @@ internal class McpOAuthCoordinator(
         requireSecureMcpEndpoint(authorizationEndpoint)
         requireSecureMcpEndpoint(tokenEndpoint)
         metadata.registrationEndpoint?.let(::requireSecureMcpEndpoint)
+        // The authorization endpoint is opened by the external browser, so preflight its DNS
+        // here rather than relying only on the OkHttp client's protected DNS resolver.
+        McpOAuthNetworkPolicy.validateUrlHost(authorizationEndpoint)
         val scope = config.commonOptions.oauth?.scope
             ?: protectedResource?.scopesSupported?.joinToString(" ")
             ?: metadata.scopesSupported?.joinToString(" ")
