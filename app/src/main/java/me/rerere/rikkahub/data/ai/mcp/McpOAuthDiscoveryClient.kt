@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.mcp
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -53,29 +54,59 @@ internal class McpOAuthDiscoveryClient(
      */
     suspend fun discoverProtectedResource(serverUrl: String): ProtectedResourceMetadata =
         withContext(Dispatchers.IO) {
+            val expectedResource = canonicalResource(serverUrl)
             val candidates = buildList {
                 probeResourceMetadataUrl(serverUrl)?.let { add(it) }
                 addAll(wellKnownProtectedResourceUrls(serverUrl))
             }.distinct()
             for (url in candidates) {
-                val metadata = runCatching { getJson<ProtectedResourceMetadata>(url) }.getOrNull()
-                if (metadata != null && metadata.authorizationServers.isNotEmpty()) {
-                    Log.i(TAG, "Protected resource metadata: $url -> ${metadata.authorizationServers}")
-                    return@withContext metadata
+                val metadata = try {
+                    getJson<ProtectedResourceMetadata>(url)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    continue
                 }
+                // RFC 9728 binds metadata to the exact protected resource identifier.
+                if (metadata.resource != expectedResource || metadata.authorizationServers.isEmpty()) {
+                    Log.w(TAG, "Rejected protected resource metadata with mismatched resource or empty authorization_servers")
+                    continue
+                }
+                if (metadata.authorizationServers.any { !isSecureMetadataUrl(it) }) {
+                    Log.w(TAG, "Rejected protected resource metadata containing an insecure authorization server")
+                    continue
+                }
+                Log.i(TAG, "Accepted protected resource metadata for the requested resource")
+                return@withContext metadata
             }
-            error("无法发现受保护资源元数据 (protected resource metadata)")
+            error("无法发现与请求资源匹 dengan matching resource metadata")
         }
 
     /** 依次尝试 RFC 8414 与 OIDC Discovery 的 well-known 路径。 */
     suspend fun discoverAuthorizationServer(issuer: String): AuthorizationServerMetadata =
         withContext(Dispatchers.IO) {
+            require(isSecureMetadataUrl(issuer)) { "Authorization server issuer must use HTTPS" }
             for (url in wellKnownAuthorizationServerUrls(issuer)) {
-                val metadata = runCatching { getJson<AuthorizationServerMetadata>(url) }.getOrNull()
-                if (metadata?.authorizationEndpoint != null && metadata.tokenEndpoint != null) {
-                    Log.i(TAG, "Authorization server metadata: $url")
-                    return@withContext metadata
+                val metadata = try {
+                    getJson<AuthorizationServerMetadata>(url)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    continue
                 }
+                // RFC 8414 requires the issuer in metadata to identify the requested issuer.
+                if (metadata.issuer != issuer ||
+                    metadata.authorizationEndpoint == null ||
+                    metadata.tokenEndpoint == null ||
+                    !isSecureMetadataUrl(metadata.authorizationEndpoint) ||
+                    !isSecureMetadataUrl(metadata.tokenEndpoint) ||
+                    (metadata.registrationEndpoint != null && !isSecureMetadataUrl(metadata.registrationEndpoint))
+                ) {
+                    Log.w(TAG, "Rejected authorization server metadata with issuer or endpoint mismatch")
+                    continue
+                }
+                Log.i(TAG, "Accepted authorization server metadata for the requested issuer")
+                return@withContext metadata
             }
             error("无法发现授权服务器元数据 (authorization server metadata): $issuer")
         }
@@ -86,13 +117,19 @@ internal class McpOAuthDiscoveryClient(
             .header("Accept", "application/json, text/event-stream")
             .get()
             .build()
-        return runCatching {
+        return try {
             executeRaw(request).use { response ->
                 if (response.code != 401) return null
                 val header = response.header("WWW-Authenticate") ?: return null
-                RESOURCE_METADATA_REGEX.find(header)?.groupValues?.getOrNull(1)
+                val metadataUrl = RESOURCE_METADATA_REGEX.find(header)?.groupValues?.getOrNull(1)
+                    ?: return null
+                metadataUrl.takeIf(::isSecureMetadataUrl)
             }
-        }.getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun wellKnownProtectedResourceUrls(serverUrl: String): List<String> {
@@ -120,6 +157,15 @@ internal class McpOAuthDiscoveryClient(
             add("$origin/.well-known/oauth-authorization-server")
             add("$origin/.well-known/openid-configuration")
         }.distinct()
+    }
+
+    private fun isSecureMetadataUrl(value: String): Boolean {
+        val url = value.toHttpUrlOrNull() ?: return false
+        return url.scheme == "https" &&
+            url.host.isNotBlank() &&
+            url.username.isEmpty() &&
+            url.password.isEmpty() &&
+            url.fragment == null
     }
 
     private fun portSuffix(url: HttpUrl): String {
