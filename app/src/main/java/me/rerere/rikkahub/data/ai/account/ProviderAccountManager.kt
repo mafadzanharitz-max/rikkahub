@@ -65,40 +65,51 @@ class ProviderAccountManager(
         redirectHost = ChatGPTAuth.CALLBACK_HOST,
     )
     private val loginJobs = ConcurrentHashMap<Uuid, Job>()
+    private val loginAttempts = AccountLoginAttemptTracker()
+    private val loginLock = Any()
     private val refreshLocks = ConcurrentHashMap<Uuid, Mutex>()
 
     private val _loginStatus = MutableStateFlow<Map<Uuid, AccountLoginStatus>>(emptyMap())
     val loginStatus: StateFlow<Map<Uuid, AccountLoginStatus>> = _loginStatus.asStateFlow()
 
     fun startLogin(providerId: Uuid, context: Context) {
-        val provider = findAccount(providerId) ?: return
-        loginJobs.remove(providerId)?.cancel()
-        setStatus(providerId, AccountLoginStatus.Authorizing)
-        val job = appScope.launch {
-            try {
-                val credential = when (provider) {
-                    is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext)
-                    is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext)
+        synchronized(loginLock) {
+            val provider = findAccount(providerId) ?: return
+            val attempt = loginAttempts.begin(providerId)
+            loginJobs.remove(providerId)?.cancel()
+            setStatus(providerId, AccountLoginStatus.Authorizing)
+            val job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                try {
+                    val credential = when (provider) {
+                        is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext)
+                        is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext)
+                    }
+                    persistLoginCredential(provider, attempt, credential)
+                    if (loginAttempts.isCurrent(providerId, attempt)) setStatus(providerId, null)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (loginAttempts.isCurrent(providerId, attempt)) {
+                        Log.e(TAG, "Login failed for ${provider.name}", e)
+                        setStatus(
+                            providerId,
+                            AccountLoginStatus.Failed(e.message ?: e.javaClass.simpleName)
+                        )
+                    }
                 }
-                persistCredential(providerId, credential)
-                setStatus(providerId, null)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Login failed for ${provider.name}", e)
-                setStatus(
-                    providerId,
-                    AccountLoginStatus.Failed(e.message ?: e.javaClass.simpleName)
-                )
             }
+            loginJobs[providerId] = job
+            job.invokeOnCompletion { loginJobs.remove(providerId, job) }
+            job.start()
         }
-        loginJobs[providerId] = job
-        job.invokeOnCompletion { loginJobs.remove(providerId, job) }
     }
 
     fun cancelLogin(providerId: Uuid) {
-        loginJobs.remove(providerId)?.cancel()
-        setStatus(providerId, null)
+        synchronized(loginLock) {
+            loginAttempts.invalidate(providerId)
+            loginJobs.remove(providerId)?.cancel()
+            setStatus(providerId, null)
+        }
     }
 
     suspend fun logout(providerId: Uuid) {
@@ -250,6 +261,36 @@ class ProviderAccountManager(
         }
     }
 
+    /**
+     * A browser login can finish after the user cancels, starts another login, removes the
+     * provider, or switches its account type. Validate the generation inside the settings
+     * transaction so a stale token response cannot resurrect an obsolete session.
+     */
+    private suspend fun persistLoginCredential(
+        expected: ProviderSetting.Account,
+        attempt: Long,
+        credential: OAuthCredential,
+    ) {
+        settingsStore.update { old ->
+            check(loginAttempts.isCurrent(expected.id, attempt)) {
+                "Account login was cancelled or superseded"
+            }
+            var matched = false
+            val providers = old.providers.map { provider ->
+                if (provider.id != expected.id) provider
+                else {
+                    check(provider is ProviderSetting.Account && provider::class == expected::class) {
+                        "Account provider was removed or changed during login"
+                    }
+                    matched = true
+                    provider.withCredential(credential)
+                }
+            }
+            check(matched) { "Account provider was removed during login" }
+            old.copy(providers = providers)
+        }
+    }
+
     /** 设置里的凭据仍是 [expected] 时才替换，返回是否替换了 */
     private suspend fun replaceCredential(
         providerId: Uuid,
@@ -297,3 +338,27 @@ fun ProviderSetting.preserveCredential(latest: ProviderSetting): ProviderSetting
     } else {
         this
     }
+
+
+/** Per-provider login generation. A newer login or cancellation invalidates older results. */
+internal class AccountLoginAttemptTracker {
+    private val generations = HashMap<Uuid, Long>()
+
+    @Synchronized
+    fun begin(providerId: Uuid): Long {
+        val next = (generations[providerId] ?: 0L) + 1L
+        generations[providerId] = next
+        return next
+    }
+
+    @Synchronized
+    fun invalidate(providerId: Uuid): Long {
+        val next = (generations[providerId] ?: 0L) + 1L
+        generations[providerId] = next
+        return next
+    }
+
+    @Synchronized
+    fun isCurrent(providerId: Uuid, attempt: Long): Boolean =
+        generations[providerId] == attempt
+}
