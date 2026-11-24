@@ -20,6 +20,7 @@ ELF_HEADER_SIZE = 52
 ELF_SECTION_HEADER_SIZE = 40
 ELFCLASS32 = 1
 ELFDATA2LSB = 1
+ET_EXEC = 2
 ET_DYN = 3
 EM_ARM = 40
 SHT_STRTAB = 3
@@ -319,8 +320,17 @@ def main() -> None:
 
                 elf_type, machine, version = struct.unpack_from("<HHI", header, 16)
                 header_size = struct.unpack_from("<H", header, 40)[0]
-                if elf_type != ET_DYN:
-                    fail(f"{name}: expected ET_DYN shared object, got e_type={elf_type}")
+                lib_basename = name.rsplit("/", 1)[-1]
+                # proot_loader is an executable launched as a program, even
+                # though it is packaged in Android's native-library directory.
+                # Every other packaged .so must remain an ET_DYN shared object.
+                expected_type = ET_EXEC if lib_basename == "libproot_loader.so" else ET_DYN
+                if elf_type != expected_type:
+                    expected_name = (
+                        "ET_EXEC executable" if expected_type == ET_EXEC
+                        else "ET_DYN shared object"
+                    )
+                    fail(f"{name}: expected {expected_name}, got e_type={elf_type}")
                 if machine != EM_ARM:
                     fail(f"{name}: expected EM_ARM (40), got e_machine={machine}")
                 if version != 1:
@@ -339,12 +349,12 @@ def main() -> None:
                     )
 
                 # Verify required dynamic symbols
-                lib_basename = name.rsplit("/", 1)[-1]
                 check_required_symbols(elf, lib_basename)
 
             print(
                 f"Verified {len(libraries)} native libraries: "
-                "ELF32, little-endian, ET_DYN, EM_ARM, Tag_CPU_arch=10 (ARMv7)"
+                "ELF32, little-endian, ET_DYN (ET_EXEC for proot_loader), "
+                "EM_ARM, Tag_CPU_arch=10 (ARMv7)"
             )
     except (OSError, zipfile.BadZipFile) as error:
         fail(f"cannot inspect APK {apk}: {error}")
