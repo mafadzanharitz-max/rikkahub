@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
@@ -45,38 +46,59 @@ internal class McpOAuthCoordinator(
 ) {
     private val authorizationJobs = ConcurrentHashMap<Uuid, Job>()
     private val refreshLocks = ConcurrentHashMap<Uuid, Mutex>()
+    private val authorizationMutationLocks = ConcurrentHashMap<Uuid, Mutex>()
+    private val authorizationAttempts = McpOAuthAttemptTracker()
+    private val authorizationLock = Any()
 
     fun startAuthorization(config: McpServerConfig, context: Context) {
-        authorizationJobs.remove(config.id)?.cancel()
-        val job = appScope.launch {
-            updateStatus(config.id, McpStatus.Authorizing)
-            try {
-                authorize(config, context.applicationContext)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "OAuth authorization failed (${e.javaClass.simpleName})")
-                updateStatus(config.id, McpStatus.Error.fromRemote(e))
+        synchronized(authorizationLock) {
+            val attempt = authorizationAttempts.begin(config.id)
+            authorizationJobs.remove(config.id)?.cancel()
+            val job = appScope.launch(start = CoroutineStart.LAZY) {
+                updateStatus(config.id, McpStatus.Authorizing)
+                try {
+                    authorize(config, context.applicationContext, attempt)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (authorizationAttempts.isCurrent(config.id, attempt)) {
+                        Log.e(TAG, "OAuth authorization failed (${e.javaClass.simpleName})")
+                        updateStatus(config.id, McpStatus.Error.fromRemote(e))
+                    }
+                }
             }
+            authorizationJobs[config.id] = job
+            job.invokeOnCompletion { authorizationJobs.remove(config.id, job) }
+            job.start()
         }
-        authorizationJobs[config.id] = job
-        job.invokeOnCompletion { authorizationJobs.remove(config.id, job) }
     }
 
     fun cancelAuthorization(configId: Uuid) {
-        authorizationJobs.remove(configId)?.cancel()
+        synchronized(authorizationLock) {
+            authorizationAttempts.invalidate(configId)
+            authorizationJobs.remove(configId)?.cancel()
+        }
         updateStatus(configId, McpStatus.NeedsAuthorization)
     }
 
     fun forget(configId: Uuid) {
-        authorizationJobs.remove(configId)?.cancel()
+        synchronized(authorizationLock) {
+            authorizationAttempts.invalidate(configId)
+            authorizationJobs.remove(configId)?.cancel()
+        }
         // Do not remove a lock that may currently be held by an in-flight refresh. A server
         // re-added with the same ID must reuse that same mutex rather than race a second refresh
         // against the old refresh token. The map is bounded in practice by configured server IDs.
     }
 
     suspend fun clearAuthorization(config: McpServerConfig): McpServerConfig {
-        persistOAuthState(config.id, null)
+        synchronized(authorizationLock) {
+            authorizationAttempts.invalidate(config.id)
+            authorizationJobs.remove(config.id)?.cancel()
+        }
+        authorizationMutationLocks.computeIfAbsent(config.id) { Mutex() }.withLock {
+            persistOAuthState(config.id, null)
+        }
         return settingsStore.settingsFlow.value.mcpServers.find { it.id == config.id }
             ?: config.clone(commonOptions = config.commonOptions.copy(oauth = null))
     }
@@ -148,9 +170,10 @@ internal class McpOAuthCoordinator(
         }
     }
 
-    private suspend fun authorize(config: McpServerConfig, context: Context) = withContext(Dispatchers.IO) {
+    private suspend fun authorize(config: McpServerConfig, context: Context, attempt: Long) = withContext(Dispatchers.IO) {
         val serverUrl = config.serverUrl
         requireSecureMcpEndpoint(serverUrl)
+        ensureAuthorizationAttemptActive(config.id, attempt)
         ensureAuthorizationTargetUnchanged(config)
 
         // 部分服务器（如 Zomato）不提供 RFC 9728 元数据，按旧版规范退回到服务器 origin 作为授权服务器
@@ -219,6 +242,7 @@ internal class McpOAuthCoordinator(
 
             persistAuthorizationState(
                 config,
+                attempt,
                 (existing ?: McpOAuthState()).copy(
                     enabled = true,
                     clientId = clientId,
@@ -254,6 +278,7 @@ internal class McpOAuthCoordinator(
 
             // Browser authorization can take several minutes; do not exchange a code for a server
             // configuration that the user has changed while the browser was open.
+            ensureAuthorizationAttemptActive(config.id, attempt)
             ensureAuthorizationTargetUnchanged(config)
             val token = oauthClient.exchangeAuthorizationCode(
                 OAuthHttpClient.AuthorizationCodeTokenRequest(
@@ -268,6 +293,7 @@ internal class McpOAuthCoordinator(
             )
             persistAuthorizationState(
                 config,
+                attempt,
                 McpOAuthState(
                     enabled = true,
                     clientId = clientId,
@@ -298,6 +324,12 @@ internal class McpOAuthCoordinator(
      * server identity and connection target before persisting credentials, including inside
      * the SettingsStore update lock to close the check/write race.
      */
+    private fun ensureAuthorizationAttemptActive(configId: Uuid, attempt: Long) {
+        check(authorizationAttempts.isCurrent(configId, attempt)) {
+            "OAuth authorization attempt was cancelled or superseded"
+        }
+    }
+
     private suspend fun ensureAuthorizationTargetUnchanged(expected: McpServerConfig) {
         val current = settingsStore.settingsFlow.value.mcpServers.find { it.id == expected.id }
             ?: error("MCP server was removed during OAuth authorization")
@@ -309,22 +341,29 @@ internal class McpOAuthCoordinator(
         }
     }
 
-    private suspend fun persistAuthorizationState(expected: McpServerConfig, oauth: McpOAuthState?) {
-        settingsStore.update { old ->
-            val current = old.mcpServers.find { it.id == expected.id }
-                ?: error("MCP server was removed during OAuth authorization")
-            check(current.commonOptions.enable) {
-                "MCP server was disabled during OAuth authorization"
-            }
-            check(sameAuthorizationTarget(expected, current)) {
-                "MCP server configuration changed during OAuth authorization"
-            }
-            old.copy(
-                mcpServers = old.mcpServers.map { server ->
-                    if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
-                    else server
+    private suspend fun persistAuthorizationState(
+        expected: McpServerConfig,
+        attempt: Long,
+        oauth: McpOAuthState,
+    ) {
+        authorizationMutationLocks.computeIfAbsent(expected.id) { Mutex() }.withLock {
+            ensureAuthorizationAttemptActive(expected.id, attempt)
+            settingsStore.update { old ->
+                val current = old.mcpServers.find { it.id == expected.id }
+                    ?: error("MCP server was removed during OAuth authorization")
+                check(current.commonOptions.enable) {
+                    "MCP server was disabled during OAuth authorization"
                 }
-            )
+                check(sameAuthorizationTarget(expected, current)) {
+                    "MCP server configuration changed during OAuth authorization"
+                }
+                old.copy(
+                    mcpServers = old.mcpServers.map { server ->
+                        if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
+                        else server
+                    }
+                )
+            }
         }
     }
 
@@ -347,21 +386,23 @@ internal class McpOAuthCoordinator(
         expected: McpServerConfig,
         oauth: McpOAuthState,
     ): McpServerConfig {
-        settingsStore.update { old ->
-            val current = old.mcpServers.find { it.id == expected.id }
-                ?: error("MCP server was removed during token refresh")
-            check(sameAuthorizationTarget(expected, current)) {
-                "MCP server configuration changed during token refresh"
-            }
-            check(current.commonOptions.oauth == expected.commonOptions.oauth) {
-                "MCP OAuth settings changed during token refresh"
-            }
-            old.copy(
-                mcpServers = old.mcpServers.map { server ->
-                    if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
-                    else server
+        authorizationMutationLocks.computeIfAbsent(expected.id) { Mutex() }.withLock {
+            settingsStore.update { old ->
+                val current = old.mcpServers.find { it.id == expected.id }
+                    ?: error("MCP server was removed during token refresh")
+                check(sameAuthorizationTarget(expected, current)) {
+                    "MCP server configuration changed during token refresh"
                 }
-            )
+                check(current.commonOptions.oauth == expected.commonOptions.oauth) {
+                    "MCP OAuth settings changed during token refresh"
+                }
+                old.copy(
+                    mcpServers = old.mcpServers.map { server ->
+                        if (server.id == expected.id) server.clone(commonOptions = server.commonOptions.copy(oauth = oauth))
+                        else server
+                    }
+                )
+            }
         }
         return settingsStore.settingsFlow.value.mcpServers.find { it.id == expected.id }
             ?: error("MCP server was removed after token refresh")
