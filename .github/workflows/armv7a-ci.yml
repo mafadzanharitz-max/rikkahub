@@ -1,11 +1,7 @@
 name: ARMv7a 3.3.0 compatibility build
 
+# Manual-only: pushes must not start a metered build without explicit approval.
 on:
-  push:
-    branches:
-      - port/armv7a-3.3.0
-      - security/http-log-redaction
-      - hardening/rootfs-transactional-install
   workflow_dispatch:
 
 permissions:
