@@ -206,7 +206,8 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
         return  # No dynamic symbol table, can't verify
 
     # Find .dynstr via dynsym's sh_link
-    dynstr_idx = dynsym[5]  # sh_link
+    # Section header fields: [sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize]
+    dynstr_idx = dynsym[6]  # sh_link (index 6, not 5)
     if dynstr_idx >= section_count:
         return
     dynstr_section = sections[dynstr_idx]
