@@ -162,6 +162,12 @@ class OAuthHttpClient(
         return base64Url(bytes)
     }
 
+    /** Fresh OIDC nonce for binding an ID token to one authorization attempt. */
+    fun generateNonce(): String {
+        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        return base64Url(bytes)
+    }
+
     fun buildAuthorizationUrl(request: AuthorizationRequest): String {
         val base = request.authorizationEndpoint.toHttpUrlOrNull()
             ?: error("非法的授权端点: ${request.authorizationEndpoint}")
