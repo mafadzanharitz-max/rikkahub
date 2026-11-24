@@ -349,6 +349,7 @@ internal class McpOAuthCoordinator(
         authorizationMutationLocks.computeIfAbsent(expected.id) { Mutex() }.withLock {
             ensureAuthorizationAttemptActive(expected.id, attempt)
             settingsStore.update { old ->
+                ensureAuthorizationAttemptActive(expected.id, attempt)
                 val current = old.mcpServers.find { it.id == expected.id }
                     ?: error("MCP server was removed during OAuth authorization")
                 check(current.commonOptions.enable) {
