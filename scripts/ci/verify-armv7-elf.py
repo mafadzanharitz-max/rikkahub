@@ -166,8 +166,9 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
     if lib_name not in REQUIRED_SYMBOLS:
         return
     # Parse dynamic symbol table (.dynsym) and string table (.dynstr)
-    # ELF32 sym entry size is 16 bytes.
+    # Elf32_Sym is 16 bytes: st_name(I), st_value(I), st_size(I), st_info(B), st_other(B), st_shndx(H)
     SYM_ENTRY_SIZE = 16
+    SYM_FMT = "<IIIBBH"  # st_name, st_value, st_size, st_info, st_other, st_shndx
     if len(elf) < ELF_HEADER_SIZE:
         return
     section_offset = struct.unpack_from("<I", elf, 32)[0]
@@ -193,13 +194,10 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
         name_offset = section[0]
         if name_offset >= len(elf):
             continue
-        # We need section names; find the string table first.
-        # This is a simplified approach: look for SHT_DYNSYM (11) and SHT_STRTAB (3) with link.
         sh_type = section[1]
         if sh_type == 11:  # SHT_DYNSYM
             dynsym = section
         elif sh_type == 3 and section[4] > 0:  # SHT_STRTAB, candidate for .dynstr
-            # The .dynstr is linked from .dynsym's sh_link
             pass
 
     if not dynsym:
@@ -207,7 +205,7 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
 
     # Find .dynstr via dynsym's sh_link
     # Section header fields: [sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize]
-    dynstr_idx = dynsym[6]  # sh_link (index 6, not 5)
+    dynstr_idx = dynsym[6]  # sh_link
     if dynstr_idx >= section_count:
         return
     dynstr_section = sections[dynstr_idx]
@@ -228,7 +226,7 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
         if i + SYM_ENTRY_SIZE > len(dynsym_data):
             break
         st_name, st_value, st_size, st_info, st_other, st_shndx = struct.unpack_from(
-            "<IBBHHI", dynsym_data, i
+            SYM_FMT, dynsym_data, i
         )
         if st_name == 0:
             continue
