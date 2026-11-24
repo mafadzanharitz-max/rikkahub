@@ -31,6 +31,12 @@ TAG_CPU_NAME = 5
 TAG_CPU_ARCH = 6
 ARMV7_ARCH = 10
 
+# Symbols that must be present in specific libraries.
+# These are minimal sanity checks; not exhaustive.
+REQUIRED_SYMBOLS = {
+    "libsqlite3x.so": {"JNI_OnLoad", "sqlite3_open", "sqlite3_close"},
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"ARMv7 ELF validation failed: {message}")
@@ -155,6 +161,91 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
     return cpu_arches[0]
 
 
+def check_required_symbols(elf: bytes, lib_name: str) -> None:
+    """Verify required dynamic symbols are present in the ELF."""
+    if lib_name not in REQUIRED_SYMBOLS:
+        return
+    # Parse dynamic symbol table (.dynsym) and string table (.dynstr)
+    # ELF32 sym entry size is 16 bytes.
+    SYM_ENTRY_SIZE = 16
+    if len(elf) < ELF_HEADER_SIZE:
+        return
+    section_offset = struct.unpack_from("<I", elf, 32)[0]
+    section_entry_size, section_count, string_index = struct.unpack_from(
+        "<HHH", elf, 46
+    )
+    if section_entry_size != ELF_SECTION_HEADER_SIZE or section_count == 0:
+        return
+    table_end = section_offset + section_entry_size * section_count
+    if section_offset < ELF_HEADER_SIZE or table_end > len(elf):
+        return
+    if string_index >= section_count:
+        return
+
+    sections = [
+        struct.unpack_from("<IIIIIIIIII", elf, section_offset + i * section_entry_size)
+        for i in range(section_count)
+    ]
+
+    dynsym = None
+    dynstr = None
+    for section in sections:
+        name_offset = section[0]
+        if name_offset >= len(elf):
+            continue
+        # We need section names; find the string table first.
+        # This is a simplified approach: look for SHT_DYNSYM (11) and SHT_STRTAB (3) with link.
+        sh_type = section[1]
+        if sh_type == 11:  # SHT_DYNSYM
+            dynsym = section
+        elif sh_type == 3 and section[4] > 0:  # SHT_STRTAB, candidate for .dynstr
+            # The .dynstr is linked from .dynsym's sh_link
+            pass
+
+    if not dynsym:
+        return  # No dynamic symbol table, can't verify
+
+    # Find .dynstr via dynsym's sh_link
+    dynstr_idx = dynsym[5]  # sh_link
+    if dynstr_idx >= section_count:
+        return
+    dynstr_section = sections[dynstr_idx]
+    if dynstr_section[1] != 3:  # SHT_STRTAB
+        return
+
+    dynsym_offset, dynsym_size = dynsym[4], dynsym[5]
+    dynstr_offset, dynstr_size = dynstr_section[4], dynstr_section[5]
+    if dynsym_offset + dynsym_size > len(elf) or dynstr_offset + dynstr_size > len(elf):
+        return
+
+    dynsym_data = elf[dynsym_offset:dynsym_offset + dynsym_size]
+    dynstr_data = elf[dynstr_offset:dynstr_offset + dynstr_size]
+
+    # Parse symbols
+    found = set()
+    for i in range(0, len(dynsym_data), SYM_ENTRY_SIZE):
+        if i + SYM_ENTRY_SIZE > len(dynsym_data):
+            break
+        st_name, st_value, st_size, st_info, st_other, st_shndx = struct.unpack_from(
+            "<IBBHHI", dynsym_data, i
+        )
+        if st_name == 0:
+            continue
+        if st_name >= len(dynstr_data):
+            continue
+        name_end = dynstr_data.find(b"\0", st_name)
+        if name_end < 0:
+            continue
+        sym_name = dynstr_data[st_name:name_end].decode("ascii", errors="ignore")
+        if sym_name in REQUIRED_SYMBOLS[lib_name]:
+            found.add(sym_name)
+
+    required = REQUIRED_SYMBOLS[lib_name]
+    missing = required - found
+    if missing:
+        fail(f"{lib_name}: missing required dynamic symbols: {sorted(missing)}")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         fail("usage: verify-armv7-elf.py <apk>")
@@ -233,6 +324,10 @@ def main() -> None:
                         f"{name}: expected Tag_CPU_arch=10 (ARMv7), "
                         f"got {cpu_arch}"
                     )
+
+                # Verify required dynamic symbols
+                lib_basename = name.rsplit("/", 1)[-1]
+                check_required_symbols(elf, lib_basename)
 
             print(
                 f"Verified {len(libraries)} native libraries: "
