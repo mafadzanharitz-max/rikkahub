@@ -69,7 +69,17 @@ def make_elf(*architectures: int) -> bytes:
 
 
 def make_elf_with_dynsym(symbols: list[str]) -> bytes:
-    """Create a valid ELF32 ARM shared object with .dynsym, .dynstr, .shstrtab, .ARM.attributes."""
+    """Create a valid ELF32 ARM shared object by extending make_elf with .dynsym/.dynstr."""
+    # Start with a valid base ELF from make_elf
+    base_elf = make_elf(ELF.ARMV7_ARCH)
+    
+    # Parse base ELF structure to insert new sections
+    # Base has: header(52) + 3 sections(120) + names(24) + attrs(~50)
+    # Sections: [NULL, .shstrtab, .ARM.attributes]
+    
+    # We need to rebuild with 5 sections: NULL, .dynsym, .dynstr, .shstrtab, .ARM.attributes
+    # This is simpler: just build from scratch following make_elf pattern but with 5 sections
+    
     # .dynstr
     dynstr = bytearray(b"\0")
     sym_name_off = {}
@@ -78,23 +88,17 @@ def make_elf_with_dynsym(symbols: list[str]) -> bytes:
         dynstr.extend(sym.encode("ascii"))
         dynstr.append(0)
 
-    # .dynsym (16 bytes/entry, Elf32_Sym format)
+    # .dynsym (Elf32_Sym = 16 bytes)
     dynsym = bytearray(SYM_SIZE)  # null entry
     for sym in symbols:
         st_name = sym_name_off[sym]
-        # Elf32_Sym: st_name(I), st_value(I), st_size(I), st_info(B), st_other(B), st_shndx(H)
         struct.pack_into(SYM_FMT, dynsym, len(dynsym),
                          st_name, 0, 0, 0x12, 0, 0)  # STB_GLOBAL<<4 | STT_FUNC
 
-    # .shstrtab
+    # .shstrtab - include all section names
     shstrtab = b"\0.dynsym\0.dynstr\0.shstrtab\0.ARM.attributes\0"
 
-    # Section indices:
-    # 0: NULL
-    # 1: .dynsym
-    # 2: .dynstr
-    # 3: .shstrtab
-    # 4: .ARM.attributes
+    # Section indices: 0=NULL, 1=.dynsym, 2=.dynstr, 3=.shstrtab, 4=.ARM.attributes
     num_sections = 5
 
     # Offsets
@@ -115,7 +119,7 @@ def make_elf_with_dynsym(symbols: list[str]) -> bytes:
     struct.pack_into("<H", hdr, 40, ELF.ELF_HEADER_SIZE)
     struct.pack_into("<HHH", hdr, 46, ELF.ELF_SECTION_HEADER_SIZE, num_sections, 3)
 
-    # Section headers (10 fields each: name, type, flags, addr, offset, size, link, info, align, entsize)
+    # Section headers
     secs = bytearray(sh_sz)
     # [0] NULL - all zeros
 
@@ -123,25 +127,21 @@ def make_elf_with_dynsym(symbols: list[str]) -> bytes:
     n1 = shstrtab.find(b".dynsym\0") + 1
     struct.pack_into("<IIIIIIIIII", secs, ELF.ELF_SECTION_HEADER_SIZE,
                      n1, 11, 2, 0, dynsym_off, len(dynsym), 2, SYM_SIZE, 4, 0)
-    # type=11(SHT_DYNSYM), flags=2(SHF_ALLOC), link=2(.dynstr), info=0, align=4, entsize=16
 
     # [2] .dynstr
     n2 = shstrtab.find(b".dynstr\0") + 1
     struct.pack_into("<IIIIIIIIII", secs, 2 * ELF.ELF_SECTION_HEADER_SIZE,
                      n2, 3, 2, 0, dynstr_off, len(dynstr), 0, 1, 0, 0)
-    # type=3(SHT_STRTAB), flags=2(SHF_ALLOC), link=0, info=0, align=1, entsize=0
 
     # [3] .shstrtab
     n3 = shstrtab.find(b".shstrtab\0") + 1
     struct.pack_into("<IIIIIIIIII", secs, 3 * ELF.ELF_SECTION_HEADER_SIZE,
                      n3, 3, 0, 0, shstrtab_off, len(shstrtab), 0, 1, 0, 0)
-    # type=3(SHT_STRTAB), flags=0
 
     # [4] .ARM.attributes
     n4 = shstrtab.find(b".ARM.attributes\0") + 1
     struct.pack_into("<IIIIIIIIII", secs, 4 * ELF.ELF_SECTION_HEADER_SIZE,
                      n4, 0x70000003, 0, 0, attr_off, len(attrs), 0, 1, 0, 0)
-    # type=0x70000003(SHT_ARM_ATTRIBUTES)
 
     return bytes(hdr + secs + dynsym + dynstr + shstrtab + attrs)
 
@@ -188,7 +188,8 @@ class SymbolVerificationTests(unittest.TestCase):
         elf = make_elf_with_dynsym(["JNI_OnLoad", "sqlite3_open", "sqlite3_close"])
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
 
-    def test_accepts_libsqlite3x_with_required_symbols(self):
+    def test_fixture_passes_check_required_symbols(self):
+        """Fixture with all required symbols passes check_required_symbols."""
         elf = make_elf_with_dynsym(["JNI_OnLoad", "sqlite3_open", "sqlite3_close", "extra_sym"])
         ELF.check_required_symbols(elf, "libsqlite3x.so")
 
