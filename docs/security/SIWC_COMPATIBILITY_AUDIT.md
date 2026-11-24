@@ -29,6 +29,14 @@ References:
 - https://developers.openai.com/siwc/token-sharing-open-source/sign-in
 - https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions
 
+## OAuth foundation and adjacent lifecycle hardening
+
+The shared OAuth module now has optional OIDC nonce generation and authorization URL support. The loopback callback server captures the optional SIWC client_id, scope, and RFC 9207 iss response parameters, with unit coverage for callback parsing and URL construction.
+
+The ChatGPT account flow does **not** yet consume those fields, use the nonce, perform dynamic registration, or validate an ID token. These primitives are groundwork only and do not change the SIWC compatibility status.
+
+The adjacent account-login lifecycle now uses per-provider attempt generations. A cancelled or superseded browser login cannot persist its late token response; persistence also checks that the provider still exists and retains the same account-provider type. This is lifecycle hardening, not SIWC protocol completion.
+
 ## Decision and release gate
 
 - Do not claim the existing implementation is officially approved, SIWC-compliant, or authorized for third-party reuse. No permission basis for reusing the Codex CLI client ID has been established by this audit.
