@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Test ARMv7 ELF APK validator
+        run: python3 -m unittest discover -s scripts/ci -p 'test_verify_armv7_elf.py' -v
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
