@@ -216,7 +216,7 @@ class ApkIntegrationTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     apk = Path(directory) / "noncanonical.apk"
                     with zipfile.ZipFile(apk, "w") as archive:
-                        archive.writestr(malformed_path, make_apk_library(name, ELF.ARMV7_ARCH))
+                        archive.writestr(malformed_path, make_apk_library(REQUIRED[0], ELF.ARMV7_ARCH))
                         for name in REQUIRED[1:]:
                             archive.writestr(
                                 f"lib/armeabi-v7a/{name}",
