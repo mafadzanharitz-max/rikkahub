@@ -77,8 +77,10 @@ internal class McpOAuthCoordinator(
         synchronized(authorizationLock) {
             authorizationAttempts.invalidate(configId)
             authorizationJobs.remove(configId)?.cancel()
+            // Keep cancellation status ordered with startAuthorization: an older cancel must
+            // never overwrite the Authorizing status of a newer attempt.
+            updateStatus(configId, McpStatus.NeedsAuthorization)
         }
-        updateStatus(configId, McpStatus.NeedsAuthorization)
     }
 
     fun forget(configId: Uuid) {
