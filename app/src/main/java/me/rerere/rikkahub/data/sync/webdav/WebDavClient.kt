@@ -31,10 +31,11 @@ import java.io.StringReader
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+
 /**
  * Resolve a server-provided DAV href only when it stays on the configured origin
- * and within the configured collection path. URI.path is decoded, so encoded dot
- * segments are rejected as well as literal traversal segments.
+ * and within the configured collection path. Repeated percent decoding rejects
+ * both ordinary and multiply encoded dot-segment traversal.
  */
 internal fun validateWebDavResourceHref(baseUrl: String, href: String): String {
     require(href.isNotBlank()) { "Empty WebDAV resource href" }
@@ -59,11 +60,17 @@ internal fun validateWebDavResourceHref(baseUrl: String, href: String): String {
         "WebDAV href points outside the configured collection"
     }
     var decodedPath = candidate.rawPath
-    repeat(4) {
-        decodedPath = java.net.URLDecoder.decode(
-            decodedPath.replace("+", "%2B"),
-            Charsets.UTF_8.name(),
-        )
+    for (iteration in 0 until 4) {
+        val nextPath = try {
+            java.net.URLDecoder.decode(
+                decodedPath.replace("+", "%2B"),
+                Charsets.UTF_8.name(),
+            )
+        } catch (_: IllegalArgumentException) {
+            // A literal percent character is not another valid encoding layer.
+            break
+        }
+        decodedPath = nextPath
         require(decodedPath.split('/').none { it == "." || it == ".." }) {
             "WebDAV href contains path traversal"
         }
