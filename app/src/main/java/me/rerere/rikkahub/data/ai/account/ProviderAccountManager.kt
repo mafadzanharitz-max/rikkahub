@@ -113,8 +113,32 @@ class ProviderAccountManager(
     }
 
     suspend fun logout(providerId: Uuid) {
-        cancelLogin(providerId)
-        persistCredential(providerId, null)
+        // Serialize the generation check with login creation while the settings transform
+        // is applied. A new login that starts after logout was requested must not have its
+        // freshly persisted credential erased by this older logout operation.
+        val logoutAttempt = synchronized(loginLock) {
+            val attempt = loginAttempts.invalidate(providerId)
+            loginJobs.remove(providerId)?.cancel()
+            setStatus(providerId, null)
+            attempt
+        }
+        settingsStore.update { old ->
+            synchronized(loginLock) {
+                if (!loginAttempts.isCurrent(providerId, logoutAttempt)) {
+                    old
+                } else {
+                    old.copy(
+                        providers = old.providers.map { provider ->
+                            if (provider.id == providerId && provider is ProviderSetting.Account) {
+                                provider.withCredential(null)
+                            } else {
+                                provider
+                            }
+                        }
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -246,20 +270,6 @@ class ProviderAccountManager(
             JsonInstant.parseToJsonElement(response.body.string()).jsonObject.claimString("email")
         }
     }.onFailure { Log.w(TAG, "Failed to fetch Grok userinfo", it) }.getOrNull()
-
-    private suspend fun persistCredential(providerId: Uuid, credential: OAuthCredential?) {
-        settingsStore.update { old ->
-            old.copy(
-                providers = old.providers.map { provider ->
-                    if (provider.id == providerId && provider is ProviderSetting.Account) {
-                        provider.withCredential(credential)
-                    } else {
-                        provider
-                    }
-                }
-            )
-        }
-    }
 
     /**
      * A browser login can finish after the user cancels, starts another login, removes the
