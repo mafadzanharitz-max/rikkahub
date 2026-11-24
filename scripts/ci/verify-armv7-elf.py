@@ -172,14 +172,28 @@ def main() -> None:
                 fail("APK contains no native shared libraries")
 
             wrong_paths = []
+            duplicate_paths = []
+            seen_paths = set()
             for name in libraries:
-                parts = PurePosixPath(name).parts
-                if len(parts) != 3 or parts[:2] != ("lib", "armeabi-v7a"):
+                # Validate the raw ZIP path: PurePosixPath normalizes "." and
+                # repeated separators, which would hide non-canonical entries.
+                parts = name.split("/")
+                if (
+                    len(parts) != 3
+                    or parts[0] != "lib"
+                    or parts[1] != "armeabi-v7a"
+                    or parts[2] in ("", ".", "..")
+                ):
                     wrong_paths.append(name)
+                if name in seen_paths:
+                    duplicate_paths.append(name)
+                seen_paths.add(name)
             if wrong_paths:
                 fail(f"unexpected native library paths: {wrong_paths}")
+            if duplicate_paths:
+                fail(f"duplicate native library paths: {duplicate_paths}")
 
-            names = {PurePosixPath(name).name for name in libraries}
+            names = {name.rsplit("/", 1)[-1] for name in libraries}
             missing = sorted(REQUIRED_LIBRARIES - names)
             if missing:
                 fail(f"missing required native libraries: {missing}")
