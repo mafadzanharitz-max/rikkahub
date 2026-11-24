@@ -63,6 +63,39 @@ internal fun requireSecureBackupEndpoint(rawEndpoint: String) {
     }
 }
 
+
+/** Maximum encrypted or legacy backup archive accepted from disk or a remote transport. */
+internal const val MAX_BACKUP_ARCHIVE_BYTES = 2L * 1024 * 1024 * 1024
+
+/**
+ * Copy an untrusted backup stream to a private temporary file with a hard byte limit.
+ * Content-Length is only advisory; the streamed byte count is authoritative.
+ */
+internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: File) {
+    var total = 0L
+    try {
+        input.use { source ->
+            target.outputStream().buffered().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    require(count.toLong() <= MAX_BACKUP_ARCHIVE_BYTES - total) {
+                        "Backup archive exceeds the maximum download size"
+                    }
+                    total += count
+                    output.write(buffer, 0, count)
+                }
+                output.flush()
+            }
+        }
+    } catch (error: Throwable) {
+        target.delete()
+        throw error
+    }
+}
+
 /** Shared archive format and restore lifecycle for local, WebDAV and S3 backups. */
 class BackupManager(
     private val context: Context,
@@ -119,6 +152,9 @@ class BackupManager(
     suspend fun stageRestore(archive: File, includeDatabase: Boolean, includeFiles: Boolean, password: String? = null) =
         withContext(Dispatchers.IO) {
             restoreMutex.withLock {
+                require(archive.isFile && archive.length() <= MAX_BACKUP_ARCHIVE_BYTES) {
+                    "Backup archive exceeds the maximum supported size"
+                }
                 val restore = pendingRestore(context)
                 val staging = restore.createStagingDirectory()
                 try {
@@ -423,13 +459,21 @@ class BackupManager(
                     // it until doFinal() has authenticated the complete GCM tag successfully.
                     FileOutputStream(target).use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var decryptedBytes = 0L
+                        fun writeBounded(bytes: ByteArray) {
+                            require(bytes.size.toLong() <= MAX_BACKUP_ARCHIVE_BYTES - decryptedBytes) {
+                                "Decrypted backup archive exceeds the maximum supported size"
+                            }
+                            decryptedBytes += bytes.size
+                            output.write(bytes)
+                        }
                         while (true) {
                             currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            cipher.update(buffer, 0, count)?.let { output.write(it) }
+                            cipher.update(buffer, 0, count)?.let(::writeBounded)
                         }
-                        output.write(cipher.doFinal())
+                        writeBounded(cipher.doFinal())
                         output.fd.sync()
                     }
                 }
