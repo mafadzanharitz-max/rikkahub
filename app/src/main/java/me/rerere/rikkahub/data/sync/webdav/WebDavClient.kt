@@ -50,6 +50,39 @@ class WebDavClient(
             "$base/${pathSegments.joinToString("/")}"
         }
     }
+
+    /**
+     * Resolve a server-provided DAV href only when it stays on the configured
+     * origin and within the configured DAV collection path.
+     */
+    private fun resourceUrl(href: String): String {
+        require(href.isNotBlank()) { "Empty WebDAV resource href" }
+        val base = java.net.URI(config.buildUrl().trimEnd('/') + "/")
+        val candidate = base.resolve(java.net.URI(href)).normalize()
+        val scheme = candidate.scheme ?: throw IllegalArgumentException("WebDAV href has no scheme")
+        val basePort = base.port.takeIf { it >= 0 } ?: if (base.scheme.equals("https", true)) 443 else 80
+        val candidatePort = candidate.port.takeIf { it >= 0 } ?: if (scheme.equals("https", true)) 443 else 80
+        require(
+            scheme.equals(base.scheme, ignoreCase = true) &&
+                candidate.host?.equals(base.host, ignoreCase = true) == true &&
+                candidatePort == basePort &&
+                candidate.rawUserInfo == null &&
+                candidate.rawQuery == null &&
+                candidate.rawFragment == null
+        ) { "WebDAV href points outside the configured server" }
+
+        val basePath = base.path.trimEnd('/')
+        val resourcePath = candidate.path
+        val allowed = if (basePath.isEmpty()) "/" else "$basePath/"
+        require(
+            resourcePath == basePath ||
+                resourcePath.startsWith(allowed)
+        ) { "WebDAV href points outside the configured collection" }
+        require(resourcePath.split('/').none { it == "." || it == ".." }) {
+            "WebDAV href contains path traversal"
+        }
+        return candidate.toASCIIString()
+    }
     suspend fun put(
         path: String,
         data: ByteArray,
@@ -150,7 +183,7 @@ class WebDavClient(
 
     suspend fun downloadToFile(path: String, targetFile: File): Result<Unit> = withContext(Dispatchers.IO) {
         runCatchingCancellable {
-            val url = config.buildUrl(path)
+            val url = resourceUrl(path)
             Log.d(TAG, "GET download request")
 
             httpClient.prepareRequest(url) {
@@ -180,7 +213,7 @@ class WebDavClient(
 
     suspend fun delete(path: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatchingCancellable {
-            val url = config.buildUrl(path)
+            val url = resourceUrl(path)
             Log.d(TAG, "DELETE request")
 
             val response: HttpResponse = httpClient.request(url) {
