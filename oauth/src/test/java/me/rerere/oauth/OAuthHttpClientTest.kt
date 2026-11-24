@@ -100,6 +100,7 @@ class OAuthHttpClientTest {
                 scope = "openid profile",
                 resources = listOf("https://mcp.example.com", "https://api.example.com"),
                 additionalParameters = mapOf("prompt" to "consent"),
+                nonce = "oidc-nonce-value",
             )
         ).toHttpUrl()
 
@@ -113,6 +114,7 @@ class OAuthHttpClientTest {
         assertEquals("challenge", url.queryParameter("code_challenge"))
         assertEquals("S256", url.queryParameter("code_challenge_method"))
         assertEquals("expected-state", url.queryParameter("state"))
+        assertEquals("oidc-nonce-value", url.queryParameter("nonce"))
         assertEquals("openid profile", url.queryParameter("scope"))
         assertEquals(
             listOf("https://mcp.example.com", "https://api.example.com"),
