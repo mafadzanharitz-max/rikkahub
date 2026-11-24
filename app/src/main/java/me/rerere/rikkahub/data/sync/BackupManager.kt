@@ -73,7 +73,12 @@ internal const val MAX_BACKUP_ARCHIVE_BYTES = 2L * 1024 * 1024 * 1024
  * Copy an untrusted backup stream to a private temporary file with a hard byte limit.
  * Content-Length is only advisory; the streamed byte count is authoritative.
  */
-internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: File) {
+internal suspend fun copyBackupStreamToFile(
+    input: java.io.InputStream,
+    target: File,
+    maxBytes: Long = MAX_BACKUP_ARCHIVE_BYTES,
+) {
+    require(maxBytes >= 0) { "Backup archive size limit cannot be negative" }
     var total = 0L
     try {
         input.use { source ->
@@ -83,7 +88,7 @@ internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: 
                     currentCoroutineContext().ensureActive()
                     val count = source.read(buffer)
                     if (count < 0) break
-                    require(count.toLong() <= MAX_BACKUP_ARCHIVE_BYTES - total) {
+                    require(count.toLong() <= maxBytes - total) {
                         "Backup archive exceeds the maximum download size"
                     }
                     total += count
