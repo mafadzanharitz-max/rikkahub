@@ -148,11 +148,22 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
                                 attributes, attr_cursor, subsection_end
                             )
                             cpu_arches.append(arch)
-                            # Later standard attributes are not needed for ABI validation.
+                            # Later attributes are not needed for ABI validation.
                             break
-                        else:
-                            raise ValueError(
-                                f"cannot safely parse ARM attribute tag {tag} before Tag_CPU_arch"
+                        elif tag == 32:  # Tag_compatibility: integer plus string.
+                            _, attr_cursor = read_uleb128(
+                                attributes, attr_cursor, subsection_end
+                            )
+                            _, attr_cursor = read_c_string(
+                                attributes, attr_cursor, subsection_end
+                            )
+                        elif tag & 1:  # AAELF32 odd-numbered tags carry strings.
+                            _, attr_cursor = read_c_string(
+                                attributes, attr_cursor, subsection_end
+                            )
+                        else:  # Other even-numbered tags carry ULEB128 integers.
+                            _, attr_cursor = read_uleb128(
+                                attributes, attr_cursor, subsection_end
                             )
                 cursor = subsection_end
         offset = vendor_end

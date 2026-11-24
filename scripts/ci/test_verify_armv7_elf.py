@@ -31,10 +31,15 @@ def uleb(value: int) -> bytes:
     return bytes(out)
 
 
-def arm_attributes(*architectures: int) -> bytes:
+def arm_attributes(
+    *architectures: int,
+    preceding_attributes: tuple[tuple[int, bytes], ...] = (),
+) -> bytes:
     subsections = bytearray()
     for architecture in architectures:
-        payload = uleb(ELF.TAG_CPU_ARCH) + uleb(architecture)
+        payload = b"".join(
+            uleb(tag) + value for tag, value in preceding_attributes
+        ) + uleb(ELF.TAG_CPU_ARCH) + uleb(architecture)
         subsection_length = len(uleb(ELF.TAG_FILE)) + 4 + len(payload)
         subsections += uleb(ELF.TAG_FILE)
         subsections += struct.pack("<I", subsection_length)
@@ -43,11 +48,14 @@ def arm_attributes(*architectures: int) -> bytes:
     return b"A" + struct.pack("<I", 4 + len(vendor)) + vendor
 
 
-def make_elf(*architectures: int) -> bytes:
+def make_elf(
+    *architectures: int,
+    preceding_attributes: tuple[tuple[int, bytes], ...] = (),
+) -> bytes:
     names = b"\0.shstrtab\0.ARM.attributes\0"
     shstr_offset = ELF.ELF_HEADER_SIZE + 3 * ELF.ELF_SECTION_HEADER_SIZE
     attr_offset = shstr_offset + len(names)
-    attrs = arm_attributes(*architectures)
+    attrs = arm_attributes(*architectures, preceding_attributes=preceding_attributes)
 
     header = bytearray(ELF.ELF_HEADER_SIZE)
     header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
@@ -67,6 +75,27 @@ def make_elf(*architectures: int) -> bytes:
 class ElfParserTests(unittest.TestCase):
     def test_accepts_armv7_shared_object(self):
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(make_elf(ELF.ARMV7_ARCH), "fixture.so"))
+
+    def test_accepts_unknown_odd_string_attribute_before_cpu_arch(self):
+        elf = make_elf(
+            ELF.ARMV7_ARCH,
+            preceding_attributes=((67, b"optimization-profile\\0"),),
+        )
+        self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
+
+    def test_accepts_unknown_even_integer_attribute_before_cpu_arch(self):
+        elf = make_elf(
+            ELF.ARMV7_ARCH,
+            preceding_attributes=((66, uleb(3)),),
+        )
+        self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
+
+    def test_accepts_compatibility_attribute_before_cpu_arch(self):
+        elf = make_elf(
+            ELF.ARMV7_ARCH,
+            preceding_attributes=((32, uleb(1) + b"ARMv7\\0"),),
+        )
+        self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
 
     def test_rejects_non_armv7_architecture(self):
         self.assertEqual(9, ELF.arm_cpu_arch(make_elf(9), "fixture.so"))
