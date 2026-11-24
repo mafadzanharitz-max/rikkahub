@@ -100,7 +100,7 @@ internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: 
 
 /**
  * Enforce the archive size limit while writing. The encrypted header is emitted before this
- * wrapper is created, so the payload budget reserves its fixed 37-byte header.
+ * wrapper is created; reserve its 37 bytes plus the 16-byte AES-GCM authentication tag.
  */
 internal class LimitedBackupOutputStream(
     output: OutputStream,
@@ -141,7 +141,7 @@ class BackupManager(
             ZipOutputStream(
                 LimitedBackupOutputStream(
                     encryptedOutputStream(archive, password),
-                    MAX_BACKUP_ARCHIVE_BYTES - 37L,
+                    MAX_BACKUP_ARCHIVE_BYTES - 53L,
                 )
             ).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
