@@ -188,7 +188,8 @@ internal class McpOAuthCoordinator(
                 "OAuth 回调服务器地址不一致: $redirectUri"
             }
             val existing = config.commonOptions.oauth
-            val canReuseClient = existing?.redirectUri == redirectUri && !existing.clientId.isNullOrBlank()
+            val canReuseClient = existing?.authorizationServerIssuer == issuer &&
+                existing.redirectUri == redirectUri && !existing.clientId.isNullOrBlank()
             var clientId = existing?.clientId.takeIf { canReuseClient }
             var clientSecret = existing?.clientSecret.takeIf { canReuseClient }
             if (clientId.isNullOrBlank() && metadata.registrationEndpoint == null &&
@@ -222,6 +223,7 @@ internal class McpOAuthCoordinator(
                     authorizationEndpoint = authorizationEndpoint,
                     tokenEndpoint = tokenEndpoint,
                     registrationEndpoint = metadata.registrationEndpoint,
+                    authorizationServerIssuer = issuer,
                     redirectUri = redirectUri,
                     scope = scope,
                 )
