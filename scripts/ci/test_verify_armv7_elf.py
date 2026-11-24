@@ -136,10 +136,26 @@ class ElfParserTests(unittest.TestCase):
             ELF.read_uleb128(b"\x80\x80\x80\x80\x80", 0, 5)
 
 
-# SymbolVerificationTests temporarily disabled - fixture debug requires CI logs
-# TODO: Re-enable once fixture is debugged with CI logs
-# class SymbolVerificationTests(unittest.TestCase):
-#     pass
+
+class SymbolVerificationTests(unittest.TestCase):
+    def test_rejects_missing_dynamic_symbol_table(self):
+        with self.assertRaisesRegex(SystemExit, "missing dynamic symbol table"):
+            ELF.check_required_symbols(make_elf(ELF.ARMV7_ARCH), "libsqlite3x.so")
+
+    def test_rejects_truncated_elf_before_symbol_inspection(self):
+        with self.assertRaisesRegex(SystemExit, "truncated ELF header"):
+            ELF.check_required_symbols(b"\x7fELF", "libsqlite3x.so")
+
+    def test_rejects_out_of_bounds_section_table(self):
+        elf = bytearray(make_elf(ELF.ARMV7_ARCH))
+        struct.pack_into("<I", elf, 32, len(elf) + 1)
+        with self.assertRaisesRegex(SystemExit, "section header table is out of bounds"):
+            ELF.check_required_symbols(bytes(elf), "libsqlite3x.so")
+
+    def test_ignores_libraries_without_symbol_requirements(self):
+        ELF.check_required_symbols(b"not an ELF", "libsimple.so")
+
+
 
 
 class ApkIntegrationTests(unittest.TestCase):
