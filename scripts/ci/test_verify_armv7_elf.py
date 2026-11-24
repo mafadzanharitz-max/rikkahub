@@ -52,31 +52,74 @@ def make_elf(
     *architectures: int,
     preceding_attributes: tuple[tuple[int, bytes], ...] = (),
     elf_type: int = ELF.ET_DYN,
+    include_required_symbols: bool = False,
+    undefined_required_symbols: bool = False,
 ) -> bytes:
-    names = b"\0.shstrtab\0.ARM.attributes\0"
-    shstr_offset = ELF.ELF_HEADER_SIZE + 3 * ELF.ELF_SECTION_HEADER_SIZE
+    names = (
+        b"\0.shstrtab\0.ARM.attributes\0.dynstr\0.dynsym\0"
+        if include_required_symbols else b"\0.shstrtab\0.ARM.attributes\0"
+    )
+    section_count = 5 if include_required_symbols else 3
+    shstr_offset = ELF.ELF_HEADER_SIZE + section_count * ELF.ELF_SECTION_HEADER_SIZE
     attr_offset = shstr_offset + len(names)
     attrs = arm_attributes(*architectures, preceding_attributes=preceding_attributes)
+
+    dynstr = b""
+    dynsym = b""
+    if include_required_symbols:
+        dynstr = b"\0JNI_OnLoad\0sqlite3_open\0sqlite3_close\0"
+        symbol_entries = [bytes(16)]
+        for symbol_name in ("JNI_OnLoad", "sqlite3_open", "sqlite3_close"):
+            name_offset = dynstr.index(symbol_name.encode("ascii"))
+            section_index = 0 if undefined_required_symbols else 1
+            symbol_entries.append(
+                struct.pack("<IIIBBH", name_offset, 0, 0, 0x12, 0, section_index)
+            )
+        dynsym = b"".join(symbol_entries)
+        dynstr_offset = attr_offset + len(attrs)
+        dynsym_offset = dynstr_offset + len(dynstr)
 
     header = bytearray(ELF.ELF_HEADER_SIZE)
     header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
     struct.pack_into("<HHI", header, 16, elf_type, ELF.EM_ARM, 1)
     struct.pack_into("<I", header, 32, ELF.ELF_HEADER_SIZE)
     struct.pack_into("<H", header, 40, ELF.ELF_HEADER_SIZE)
-    struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, 3, 1)
+    struct.pack_into(
+        "<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, section_count, 1
+    )
 
-    sections = bytearray(3 * ELF.ELF_SECTION_HEADER_SIZE)
-    struct.pack_into("<IIIIIIIIII", sections, 40,
-                     1, ELF.SHT_STRTAB, 0, 0, shstr_offset, len(names), 0, 0, 1, 0)
-    struct.pack_into("<IIIIIIIIII", sections, 80,
-                     11, 0x70000003, 0, 0, attr_offset, len(attrs), 0, 0, 1, 0)
-    return bytes(header + sections + names + attrs)
-
+    sections = bytearray(section_count * ELF.ELF_SECTION_HEADER_SIZE)
+    struct.pack_into(
+        "<IIIIIIIIII", sections, 40,
+        1, ELF.SHT_STRTAB, 0, 0, shstr_offset, len(names), 0, 0, 1, 0,
+    )
+    struct.pack_into(
+        "<IIIIIIIIII", sections, 80,
+        11, 0x70000003, 0, 0, attr_offset, len(attrs), 0, 0, 1, 0,
+    )
+    payload = names + attrs
+    if include_required_symbols:
+        struct.pack_into(
+            "<IIIIIIIIII", sections, 120,
+            names.index(b".dynstr"), ELF.SHT_STRTAB, 0, 0,
+            dynstr_offset, len(dynstr), 0, 0, 1, 0,
+        )
+        struct.pack_into(
+            "<IIIIIIIIII", sections, 160,
+            names.index(b".dynsym"), 11, 0, 0,
+            dynsym_offset, len(dynsym), 3, 0, 4, 16,
+        )
+        payload += dynstr + dynsym
+    return bytes(header + sections + payload)
 
 
 def make_apk_library(name: str, *architectures: int) -> bytes:
     elf_type = ELF.ET_EXEC if name == "libproot_loader.so" else ELF.ET_DYN
-    return make_elf(*architectures, elf_type=elf_type)
+    return make_elf(
+        *architectures,
+        elf_type=elf_type,
+        include_required_symbols=name == "libsqlite3x.so",
+    )
 
 
 class ElfParserTests(unittest.TestCase):
@@ -151,6 +194,19 @@ class SymbolVerificationTests(unittest.TestCase):
         struct.pack_into("<I", elf, 32, len(elf) + 1)
         with self.assertRaisesRegex(SystemExit, "section header table is out of bounds"):
             ELF.check_required_symbols(bytes(elf), "libsqlite3x.so")
+
+    def test_accepts_required_defined_dynamic_symbols(self):
+        elf = make_elf(ELF.ARMV7_ARCH, include_required_symbols=True)
+        ELF.check_required_symbols(elf, "libsqlite3x.so")
+
+    def test_rejects_required_symbols_that_are_only_undefined_imports(self):
+        elf = make_elf(
+            ELF.ARMV7_ARCH,
+            include_required_symbols=True,
+            undefined_required_symbols=True,
+        )
+        with self.assertRaisesRegex(SystemExit, "missing required dynamic symbols"):
+            ELF.check_required_symbols(elf, "libsqlite3x.so")
 
     def test_ignores_libraries_without_symbol_requirements(self):
         ELF.check_required_symbols(b"not an ELF", "libsimple.so")
