@@ -74,7 +74,7 @@ class McpManager(
     private val oauthCoordinator = McpOAuthCoordinator(
         settingsStore = settingsStore,
         appScope = appScope,
-        oauthClient = OAuthHttpClient(okHttpClient),
+        oauthClient = OAuthHttpClient(McpOAuthNetworkPolicy.newSafeClient(okHttpClient)),
         discoveryClient = McpOAuthDiscoveryClient(okHttpClient),
         callbackServer = oauthCallbackServer,
         authorizationLauncher = CustomTabsOAuthAuthorizationLauncher,
