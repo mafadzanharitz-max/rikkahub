@@ -48,6 +48,35 @@ jobs:
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/apply-overlay.py" scripts/ci/
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/build-native.py" scripts/ci/
           cp "$RUNNER_TEMP/armv7-overlay/scripts/ci/setup-android.py" scripts/ci/
+          # Adapt the pinned overlay's legacy fixture patch to this fork's current tests.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/ci/apply-overlay.py")
+          source = path.read_text()
+          old = """    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
+              replace_once(fixture, 'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),',
+                           'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),\\n'
+                           '            TarTestEntry("bin/bash", content = armv7TestShellElf(), mode = 493),')
+          """
+          new = """    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
+              fixture_source = fixture.read_text()
+              fixture_target = 'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),'
+              if fixture_target in fixture_source:
+                  replace_once(fixture, fixture_target,
+                               fixture_target + "\\n            TarTestEntry(\\"bin/bash\\", content = armv7TestShellElf(), mode = 493),")
+              elif (
+                  "fun rootfsInstallerRejectsCleartextHttpUrl()" in fixture_source
+                  and "fun rootfsInstallerDownloadsAndExtractsTarGz()" not in fixture_source
+              ):
+                  print("Current fork already replaced the legacy HTTP integration fixture; no archive fixture patch is needed.")
+              else:
+                  raise RuntimeError("Unrecognized RootFS test fixture layout; refusing to skip ARMv7 shell fixture validation")
+          """
+          if source.count(old) != 1:
+              raise SystemExit("Pinned overlay fixture patch block changed; refusing an unsafe workflow rewrite")
+          path.write_text(source.replace(old, new, 1))
+          PY
           python3 - <<'PY'
           import json
           from pathlib import Path
