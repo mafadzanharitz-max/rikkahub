@@ -110,6 +110,7 @@ class OAuthHttpClient(
         val scope: String? = null,
         val resources: List<String> = emptyList(),
         val additionalParameters: Map<String, String> = emptyMap(),
+        val nonce: String? = null,
     )
 
     data class AuthorizationCodeTokenRequest(
@@ -173,6 +174,7 @@ class OAuthHttpClient(
             .addQueryParameter("state", request.state)
             .apply {
                 if (!request.scope.isNullOrBlank()) addQueryParameter("scope", request.scope)
+                if (!request.nonce.isNullOrBlank()) addQueryParameter("nonce", request.nonce)
                 request.resources.forEach { addQueryParameter("resource", it) }
                 request.additionalParameters.forEach { (name, value) -> addQueryParameter(name, value) }
             }
