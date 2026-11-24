@@ -9,5 +9,8 @@ import me.rerere.ai.BuildConfig
  */
 @Suppress("UNUSED_PARAMETER")
 internal inline fun logRequestBody(tag: String, name: String, body: () -> String) {
-    if (BuildConfig.DEBUG) Log.d(tag, "$name: request payload redacted")
+    if (BuildConfig.DEBUG) {
+        // Android's Log stub throws in local JVM unit tests; diagnostics must never break requests.
+        runCatching { Log.d(tag, "$name: request payload redacted") }
+    }
 }

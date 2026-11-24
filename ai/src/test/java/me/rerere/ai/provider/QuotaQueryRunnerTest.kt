@@ -105,14 +105,15 @@ class QuotaQueryRunnerTest {
     }
 
     @Test
-    fun `unsuccessful response fails with status and body`() = runTest {
+    fun `unsuccessful response throws typed status without retaining body`() = runTest {
         val setting = ProviderSetting.OpenAI(quotaQuery = QuotaQuery(enabled = true))
         val error = runCatching {
             client("""{"error":"denied"}""", code = 401).runQuotaQuery(setting) { "key" }
         }.exceptionOrNull()
 
-        assertTrue(error?.message.orEmpty().contains("401"))
-        assertTrue(error?.message.orEmpty().contains("denied"))
+        assertTrue("Expected ProviderHttpException, got $error", error is ProviderHttpException)
+        assertEquals(401, (error as ProviderHttpException).statusCode)
+        assertFalse(error.message.orEmpty().contains("denied"))
     }
 
     @Test
