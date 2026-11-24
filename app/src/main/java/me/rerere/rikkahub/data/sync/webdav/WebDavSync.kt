@@ -19,10 +19,14 @@ class WebDavSync(
     private val context: Context,
     private val httpClient: HttpClient,
 ) {
+    // DAV servers may redirect hrefs to another origin. Never follow those redirects:
+    // credentials and backup contents must remain scoped to the configured WebDAV origin.
+    private val webDavHttpClient = httpClient.config { followRedirects = false }
+
     private fun getClient(config: WebDavConfig): WebDavClient {
         val normalizedUrl = if ("://" in config.url) config.url else "https://${config.url}"
         requireSecureBackupEndpoint(normalizedUrl)
-        return WebDavClient(config.copy(url = normalizedUrl), httpClient)
+        return WebDavClient(config.copy(url = normalizedUrl), webDavHttpClient)
     }
 
     suspend fun testConnection(config: WebDavConfig) = withContext(Dispatchers.IO) {
