@@ -79,7 +79,7 @@ class ElfParserTests(unittest.TestCase):
     def test_accepts_unknown_odd_string_attribute_before_cpu_arch(self):
         elf = make_elf(
             ELF.ARMV7_ARCH,
-            preceding_attributes=((67, b"optimization-profile\\0"),),
+            preceding_attributes=((67, b"optimization-profile\0"),),
         )
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
 
@@ -93,7 +93,7 @@ class ElfParserTests(unittest.TestCase):
     def test_accepts_compatibility_attribute_before_cpu_arch(self):
         elf = make_elf(
             ELF.ARMV7_ARCH,
-            preceding_attributes=((32, uleb(1) + b"ARMv7\\0"),),
+            preceding_attributes=((32, uleb(1) + b"ARMv7\0"),),
         )
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(elf, "fixture.so"))
 
