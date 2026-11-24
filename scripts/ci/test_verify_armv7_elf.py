@@ -66,6 +66,60 @@ def make_elf(*architectures: int) -> bytes:
     return bytes(header + sections + names + attrs)
 
 
+def make_elf_with_dynsym(symbols: list[str]) -> bytes:
+    """Create a minimal ELF32 ARM shared object with a .dynsym and .dynstr section."""
+    # Build .dynstr
+    dynstr = bytearray(b"\0")  # First entry is empty
+    for sym in symbols:
+        dynstr.extend(sym.encode("ascii"))
+        dynstr.append(0)
+
+    # Build .dynsym (16 bytes per entry)
+    SYM_ENTRY_SIZE = 16
+    dynsym = bytearray(SYM_ENTRY_SIZE)  # Null entry
+    for i, sym in enumerate(symbols, 1):
+        # st_name = offset in dynstr
+        st_name = dynstr.find(sym.encode("ascii") + b"\0")
+        struct.pack_into("<IBBHHI", dynsym, len(dynsym),
+                         st_name, 0, 0, 0x12, 0, 0)  # STB_GLOBAL (1) << 4 | STT_FUNC (2)
+
+    # Section headers: null, .dynsym, .dynstr, .shstrtab, .ARM.attributes
+    shstrtab = b"\0.dynsym\0.dynstr\0.shstrtab\0.ARM.attributes\0"
+    num_sections = 5
+    sh_offset = ELF.ELF_HEADER_SIZE
+    sh_size = num_sections * ELF.ELF_SECTION_HEADER_SIZE
+    dynsym_offset = sh_offset + sh_size
+    dynstr_offset = dynsym_offset + len(dynsym)
+    attr_offset = dynstr_offset + len(dynstr)
+    names_offset = attr_offset
+    names = b"\0.shstrtab\0.dynsym\0.dynstr\0.ARM.attributes\0"
+
+    header = bytearray(ELF.ELF_HEADER_SIZE)
+    header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
+    struct.pack_into("<HHI", header, 16, ELF.ET_DYN, ELF.EM_ARM, 1)
+    struct.pack_into("<I", header, 32, sh_offset)
+    struct.pack_into("<H", header, 40, ELF.ELF_HEADER_SIZE)
+    struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, num_sections, 3)  # shstrndx = 3
+
+    sections = bytearray(sh_size)
+    # [0] NULL
+    # [1] .dynsym
+    struct.pack_into("<IIIIIIIIII", sections, ELF.ELF_SECTION_HEADER_SIZE,
+                     names.find(b".dynsym\0") + 1, 11, 2, 0, dynsym_offset, len(dynsym), 2, 16, 4, 0)
+    # [2] .dynstr
+    struct.pack_into("<IIIIIIIIII", sections, 2 * ELF.ELF_SECTION_HEADER_SIZE,
+                     names.find(b".dynstr\0") + 1, 3, 0, 0, dynstr_offset, len(dynstr), 0, 1, 0, 0)
+    # [3] .shstrtab
+    struct.pack_into("<IIIIIIIIII", sections, 3 * ELF.ELF_SECTION_HEADER_SIZE,
+                     names.find(b".shstrtab\0") + 1, 3, 0, 0, names_offset, len(names), 0, 1, 0, 0)
+    # [4] .ARM.attributes
+    attrs = arm_attributes(ELF.ARMV7_ARCH)
+    struct.pack_into("<IIIIIIIIII", sections, 4 * ELF.ELF_SECTION_HEADER_SIZE,
+                     names.find(b".ARM.attributes\0") + 1, 0, 0, 0, attr_offset, len(attrs), 0, 1, 0, 0)
+
+    return bytes(header + sections + dynsym + dynstr + attrs + names)
+
+
 class ElfParserTests(unittest.TestCase):
     def test_accepts_armv7_shared_object(self):
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(make_elf(ELF.ARMV7_ARCH), "fixture.so"))
@@ -102,6 +156,38 @@ class ElfParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "oversized ULEB128"):
             ELF.read_uleb128(b"\x80\x80\x80\x80\x80", 0, 5)
 
+
+class SymbolVerificationTests(unittest.TestCase):
+    def test_accepts_libsqlite3x_with_required_symbols(self):
+        # All required symbols present
+        elf = make_elf_with_dynsym(["JNI_OnLoad", "sqlite3_open", "sqlite3_close", "extra_sym"])
+        # Should not raise
+        ELF.check_required_symbols(elf, "libsqlite3x.so")
+
+    def test_rejects_libsqlite3x_missing_JNI_OnLoad(self):
+        elf = make_elf_with_dynsym(["sqlite3_open", "sqlite3_close"])
+        with self.assertRaisesRegex(SystemExit, "missing required dynamic symbols: \\['JNI_OnLoad'\\]"):
+            ELF.check_required_symbols(elf, "libsqlite3x.so")
+
+    def test_rejects_libsqlite3x_missing_sqlite3_open(self):
+        elf = make_elf_with_dynsym(["JNI_OnLoad", "sqlite3_close"])
+        with self.assertRaisesRegex(SystemExit, "missing required dynamic symbols: \\['sqlite3_open'\\]"):
+            ELF.check_required_symbols(elf, "libsqlite3x.so")
+
+    def test_rejects_libsqlite3x_missing_multiple_symbols(self):
+        elf = make_elf_with_dynsym(["JNI_OnLoad"])
+        with self.assertRaisesRegex(SystemExit, "missing required dynamic symbols: \\['sqlite3_close', 'sqlite3_open'\\]"):
+            ELF.check_required_symbols(elf, "libsqlite3x.so")
+
+    def test_skips_non_target_libraries(self):
+        # Other libraries should not be checked
+        elf = make_elf_with_dynsym([])  # No symbols
+        # Should not raise for non-target library
+        ELF.check_required_symbols(elf, "libsimple.so")
+        ELF.check_required_symbols(elf, "libtermux.so")
+
+
+class ApkIntegrationTests(unittest.TestCase):
     def test_apk_accepts_all_required_armv7_libraries(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = Path(directory) / "valid.apk"
