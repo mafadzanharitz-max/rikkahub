@@ -397,3 +397,18 @@ internal class McpOAuthCoordinator(
             message.contains("missing or invalid")
     }
 }
+
+internal class McpOAuthAttemptTracker {
+    private val generations = HashMap<Uuid, Long>()
+
+    @Synchronized
+    fun begin(configId: Uuid): Long = (generations[configId] ?: 0L) + 1L
+        .also { generations[configId] = it }
+
+    @Synchronized
+    fun invalidate(configId: Uuid): Long = (generations[configId] ?: 0L) + 1L
+        .also { generations[configId] = it }
+
+    @Synchronized
+    fun isCurrent(configId: Uuid, attempt: Long): Boolean = generations[configId] == attempt
+}
