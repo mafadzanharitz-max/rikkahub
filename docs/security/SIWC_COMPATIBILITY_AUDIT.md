@@ -8,8 +8,8 @@ Audit basis: repository source at the audit commit and the public OpenAI Sign in
 
 - `ChatGPTAuth.kt` hard-codes the Codex CLI client ID `app_EMoamEEZ73f0CkXaXp7hrann`.
 - Authorization and token URLs use `/oauth/authorize` and `/oauth/token`, with Codex-specific query parameters.
-- The callback model captures only `code`, `state`, `error`, and `error_description`; it cannot retain an issued client ID, granted scopes, or issuer response parameter.
-- The account manager exchanges the code using the hard-coded client ID.
+- The shared OAuth callback model now captures `client_id`, `scope`, and `iss` in addition to the standard callback fields. The ChatGPT account flow does not yet consume or validate these values.
+- The account manager exchanges the code using the hard-coded client ID. The generic OAuth client now supports OIDC `nonce` authorization parameters and generates a cryptographically random nonce, but the ChatGPT flow does not yet bind or validate one.
 - JWT payloads are decoded locally for display claims; signature, issuer, audience, expiry, nonce, and subject are not cryptographically validated.
 - Stored credentials do not preserve the SIWC registration/client mapping or stable host identifier.
 
@@ -19,7 +19,7 @@ The current open-source SIWC registration flow documents:
 
 1. First registration with `client_id=dynamic_agent_client`, the actual app name in `agent_name_hint`, and a persistent per-installation `ext_agent_host_id`.
 2. The authorization callback returns an issued client ID for the new registration. That issued ID, not `dynamic_agent_client`, must be persisted and reused for later sign-ins to the same account registration.
-3. The code exchange uses the issued client ID and the documented SIWC token endpoint.
+3. The documented endpoints are `https://auth.openai.com/api/accounts/authorize` and `https://auth.openai.com/api/accounts/oauth/token`. The code exchange uses the issued client ID and the same callback URI/resource. The current app instead uses the legacy `/oauth/authorize` and `/oauth/token` endpoints.
 4. Validate the ID token signature against OpenAI JWKS and verify issuer, audience, expiry, nonce, and subject before storing or activating credentials.
 5. Check the granted scopes before enabling ChatGPT plan usage. A valid identity token alone does not grant plan-use permission.
 6. Account registrations and credentials must remain separate; sign-out should attempt renewable-session revocation before clearing tokens.
@@ -38,8 +38,8 @@ References:
 
 ## Remaining implementation work
 
-- Extend callback parsing and state to capture and validate `client_id`, `scope`, and `iss`.
-- Generate and persist a stable `ext_agent_host_id`; generate a fresh OIDC nonce per authorization attempt.
+- Wire the newly supported callback `client_id`, `scope`, and `iss` fields into ChatGPT login state, and validate the returned values.
+- Generate and persist a stable `ext_agent_host_id`; wire the generic nonce generator into ChatGPT authorization and validate the returned ID-token nonce. Generic nonce generation and URL support now exist but are not yet used by ChatGPT login.
 - Implement first-time dynamic registration and returning-account client ID reuse with separate account registrations.
 - Exchange against the documented SIWC token endpoint using the issued client ID.
 - Add JOSE/JWKS signature verification and strict OIDC claim validation.
