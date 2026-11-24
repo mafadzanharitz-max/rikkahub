@@ -51,6 +51,7 @@ def arm_attributes(
 def make_elf(
     *architectures: int,
     preceding_attributes: tuple[tuple[int, bytes], ...] = (),
+    elf_type: int = ELF.ET_DYN,
 ) -> bytes:
     names = b"\0.shstrtab\0.ARM.attributes\0"
     shstr_offset = ELF.ELF_HEADER_SIZE + 3 * ELF.ELF_SECTION_HEADER_SIZE
@@ -59,7 +60,7 @@ def make_elf(
 
     header = bytearray(ELF.ELF_HEADER_SIZE)
     header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
-    struct.pack_into("<HHI", header, 16, ELF.ET_DYN, ELF.EM_ARM, 1)
+    struct.pack_into("<HHI", header, 16, elf_type, ELF.EM_ARM, 1)
     struct.pack_into("<I", header, 32, ELF.ELF_HEADER_SIZE)
     struct.pack_into("<H", header, 40, ELF.ELF_HEADER_SIZE)
     struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, 3, 1)
@@ -136,6 +137,37 @@ class ElfParserTests(unittest.TestCase):
 
 
 class ApkIntegrationTests(unittest.TestCase):
+    def test_apk_accepts_executable_proot_loader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "proot-loader-executable.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    elf_type = (
+                        ELF.ET_EXEC if name == "libproot_loader.so" else ELF.ET_DYN
+                    )
+                    archive.writestr(
+                        f"lib/armeabi-v7a/{name}",
+                        make_elf(ELF.ARMV7_ARCH, elf_type=elf_type),
+                    )
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                ELF.main()
+
+    def test_apk_rejects_executable_type_for_other_shared_libraries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "unexpected-executable.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    elf_type = (
+                        ELF.ET_EXEC if name == "libsimple.so" else ELF.ET_DYN
+                    )
+                    archive.writestr(
+                        f"lib/armeabi-v7a/{name}",
+                        make_elf(ELF.ARMV7_ARCH, elf_type=elf_type),
+                    )
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(SystemExit, "expected ET_DYN shared object"):
+                    ELF.main()
+
     def test_apk_accepts_all_required_armv7_libraries(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = Path(directory) / "valid.apk"
