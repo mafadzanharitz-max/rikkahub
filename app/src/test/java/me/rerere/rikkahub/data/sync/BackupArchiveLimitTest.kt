@@ -44,10 +44,16 @@ class BackupArchiveLimitTest {
         }
     }
     @Test
-    fun copiesStreamAtExactlyTheConfiguredLimit() = runBlocking {
+    fun copiesStreamAtExactlyTheConfiguredLimit() {
         val target = File.createTempFile("backup-limit-", ".bin")
         try {
-            copyBackupStreamToFile(ByteArrayInputStream(byteArrayOf(1, 2, 3)), target, maxBytes = 3)
+            runBlocking {
+                copyBackupStreamToFile(
+                    ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                    target,
+                    maxBytes = 3,
+                )
+            }
             assertTrue(target.isFile)
             assertArrayEquals(byteArrayOf(1, 2, 3), target.readBytes())
         } finally {
@@ -56,7 +62,7 @@ class BackupArchiveLimitTest {
     }
 
     @Test
-    fun rejectsOversizedStreamAndDeletesPartialTarget() = runBlocking {
+    fun rejectsOversizedStreamAndDeletesPartialTarget() {
         val target = File.createTempFile("backup-limit-", ".bin")
         try {
             assertThrows(IllegalArgumentException::class.java) {
@@ -73,5 +79,4 @@ class BackupArchiveLimitTest {
             target.delete()
         }
     }
-
 }
