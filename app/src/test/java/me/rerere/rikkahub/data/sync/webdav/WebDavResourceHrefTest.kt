@@ -49,6 +49,7 @@ class WebDavResourceHrefTest {
             "../escape.zip",
             "%2e%2e/escape.zip",
             "%2E%2E%2Fescape.zip",
+            "%252e%252e/escape.zip",
         ).forEach { href ->
             assertThrows(IllegalArgumentException::class.java) {
                 validateWebDavResourceHref(base, href)
