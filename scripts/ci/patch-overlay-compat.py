@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Adapt the pinned ARMv7 overlay to the fork's current RootFS test layout."""
+from pathlib import Path
+
+path = Path("scripts/ci/apply-overlay.py")
+source = path.read_text()
+start_marker = '    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"\n'
+end_marker = '    templates = {\n'
+start = source.find(start_marker)
+end = source.find(end_marker, start + len(start_marker))
+if start < 0 or end < 0:
+    raise SystemExit("Pinned overlay fixture adaptation boundaries changed")
+
+old_block = source[start:end]
+if old_block.count("replace_once(fixture,") != 1:
+    raise SystemExit("Pinned overlay fixture patch is not the expected single fail-closed operation")
+
+new_block = r'''    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
+    fixture_source = fixture.read_text()
+    fixture_target = """val archive = tarGz(
+            TarTestEntry("bin/", type = '5'),"""
+    if fixture_target in fixture_source:
+        replace_once(fixture, fixture_target,
+                     fixture_target + "\n            TarTestEntry(\"bin/bash\", content = armv7TestShellElf(), mode = 493),")
+    elif (
+        "fun rootfsInstallerRejectsCleartextHttpUrl()" in fixture_source
+        and "fun rootfsInstallerDownloadsAndExtractsTarGz()" not in fixture_source
+    ):
+        print("Current fork replaced the legacy HTTP integration fixture; no archive fixture patch is needed.")
+    else:
+        raise RuntimeError("Unrecognized RootFS test fixture layout; refusing to skip ARMv7 shell fixture validation")
+'''
+path.write_text(source[:start] + new_block + source[end:])
+print("Pinned overlay compatibility patch applied.")
