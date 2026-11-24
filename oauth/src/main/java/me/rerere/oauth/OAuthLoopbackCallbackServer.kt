@@ -28,6 +28,12 @@ data class OAuthCallback(
     val state: String,
     val error: String?,
     val errorDescription: String?,
+    /** Issued dynamic client ID returned during SIWC first-time registration. */
+    val clientId: String? = null,
+    /** Space-separated scopes returned by an authorization provider, when present. */
+    val scope: String? = null,
+    /** Authorization server issuer response parameter (RFC 9207), when present. */
+    val issuer: String? = null,
 )
 
 /**
@@ -171,6 +177,9 @@ class OAuthLoopbackCallbackServer(
             state = state,
             error = error,
             errorDescription = call.request.queryParameters["error_description"],
+            clientId = call.request.queryParameters["client_id"],
+            scope = call.request.queryParameters["scope"],
+            issuer = call.request.queryParameters["iss"],
         )
         val responseHtml = if (error == null) successHtml() else errorHtml()
         if (!registration.claimed.compareAndSet(false, true)) {
