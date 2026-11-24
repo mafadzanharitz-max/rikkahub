@@ -67,57 +67,97 @@ def make_elf(*architectures: int) -> bytes:
 
 
 def make_elf_with_dynsym(symbols: list[str]) -> bytes:
-    """Create a minimal ELF32 ARM shared object with a .dynsym and .dynstr section."""
-    # Build .dynstr
+    """Create a valid ELF32 ARM shared object with .dynsym, .dynstr, and .ARM.attributes sections."""
+    # Build .dynstr (string table for dynamic symbols)
     dynstr = bytearray(b"\0")  # First entry is empty
+    sym_name_offsets = {}
     for sym in symbols:
+        sym_name_offsets[sym] = len(dynstr)
         dynstr.extend(sym.encode("ascii"))
         dynstr.append(0)
 
     # Build .dynsym (16 bytes per entry)
     SYM_ENTRY_SIZE = 16
-    dynsym = bytearray(SYM_ENTRY_SIZE)  # Null entry
-    for i, sym in enumerate(symbols, 1):
-        # st_name = offset in dynstr
-        st_name = dynstr.find(sym.encode("ascii") + b"\0")
+    dynsym = bytearray(SYM_ENTRY_SIZE)  # Null entry (index 0)
+    for sym in symbols:
+        st_name = sym_name_offsets[sym]
+        # st_info: STB_GLOBAL (1) << 4 | STT_FUNC (2) = 0x12
+        # st_other: 0, st_shndx: SHN_UNDEF (0)
         struct.pack_into("<IBBHHI", dynsym, len(dynsym),
-                         st_name, 0, 0, 0x12, 0, 0)  # STB_GLOBAL (1) << 4 | STT_FUNC (2)
+                         st_name, 0x12, 0, 0, 0, 0)
 
-    # Section headers: null, .dynsym, .dynstr, .shstrtab, .ARM.attributes
+    # Section header string table
     shstrtab = b"\0.dynsym\0.dynstr\0.shstrtab\0.ARM.attributes\0"
+    
+    # Section indices:
+    # 0: NULL
+    # 1: .dynsym
+    # 2: .dynstr
+    # 3: .shstrtab
+    # 4: .ARM.attributes
     num_sections = 5
+    
+    # Calculate offsets
     sh_offset = ELF.ELF_HEADER_SIZE
     sh_size = num_sections * ELF.ELF_SECTION_HEADER_SIZE
     dynsym_offset = sh_offset + sh_size
     dynstr_offset = dynsym_offset + len(dynsym)
-    attr_offset = dynstr_offset + len(dynstr)
-    names_offset = attr_offset
-    names = b"\0.shstrtab\0.dynsym\0.dynstr\0.ARM.attributes\0"
-
+    shstrtab_offset = dynstr_offset + len(dynstr)
+    attr_offset = shstrtab_offset + len(shstrtab)
+    names_offset = attr_offset  # .ARM.attributes has no name in shstrtab? Actually it does.
+    # Wait, .ARM.attributes name is in shstrtab. So we need to include it.
+    # The shstrtab already includes ".ARM.attributes\0" at the end.
+    
+    attrs = arm_attributes(ELF.ARMV7_ARCH)
+    
+    # Build ELF header
     header = bytearray(ELF.ELF_HEADER_SIZE)
     header[:7] = b"\x7fELF" + bytes((ELF.ELFCLASS32, ELF.ELFDATA2LSB, 1))
     struct.pack_into("<HHI", header, 16, ELF.ET_DYN, ELF.EM_ARM, 1)
     struct.pack_into("<I", header, 32, sh_offset)
     struct.pack_into("<H", header, 40, ELF.ELF_HEADER_SIZE)
-    struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, num_sections, 3)  # shstrndx = 3
+    struct.pack_into("<HHH", header, 46, ELF.ELF_SECTION_HEADER_SIZE, num_sections, 3)  # shstrndx = 3 (.shstrtab)
 
+    # Build section headers
     sections = bytearray(sh_size)
-    # [0] NULL
+    # [0] NULL - all zeros (already zeroed)
+    
     # [1] .dynsym
+    # sh_name: offset of ".dynsym\0" in shstrtab
+    dynsym_name_off = shstrtab.find(b".dynsym\0") + 1
     struct.pack_into("<IIIIIIIIII", sections, ELF.ELF_SECTION_HEADER_SIZE,
-                     names.find(b".dynsym\0") + 1, 11, 2, 0, dynsym_offset, len(dynsym), 2, 16, 4, 0)
+                     dynsym_name_off, 11, 2, 0, dynsym_offset, len(dynsym), 2, 16, 4, 0)
+    # sh_type=11 (SHT_DYNSYM), sh_flags=2 (SHF_ALLOC), sh_link=2 (.dynstr), sh_info=0, sh_addralign=4, sh_entsize=16
+    
     # [2] .dynstr
+    dynstr_name_off = shstrtab.find(b".dynstr\0") + 1
     struct.pack_into("<IIIIIIIIII", sections, 2 * ELF.ELF_SECTION_HEADER_SIZE,
-                     names.find(b".dynstr\0") + 1, 3, 0, 0, dynstr_offset, len(dynstr), 0, 1, 0, 0)
+                     dynstr_name_off, 3, 2, 0, dynstr_offset, len(dynstr), 0, 1, 0, 0)
+    # sh_type=3 (SHT_STRTAB), sh_flags=2 (SHF_ALLOC), sh_link=0, sh_info=0, sh_addralign=1, sh_entsize=0
+    
     # [3] .shstrtab
+    shstrtab_name_off = shstrtab.find(b".shstrtab\0") + 1
     struct.pack_into("<IIIIIIIIII", sections, 3 * ELF.ELF_SECTION_HEADER_SIZE,
-                     names.find(b".shstrtab\0") + 1, 3, 0, 0, names_offset, len(names), 0, 1, 0, 0)
+                     shstrtab_name_off, 3, 0, 0, shstrtab_offset, len(shstrtab), 0, 1, 0, 0)
+    # sh_type=3 (SHT_STRTAB), sh_flags=0
+    
     # [4] .ARM.attributes
-    attrs = arm_attributes(ELF.ARMV7_ARCH)
+    attr_name_off = shstrtab.find(b".ARM.attributes\0") + 1
     struct.pack_into("<IIIIIIIIII", sections, 4 * ELF.ELF_SECTION_HEADER_SIZE,
-                     names.find(b".ARM.attributes\0") + 1, 0, 0, 0, attr_offset, len(attrs), 0, 1, 0, 0)
+                     attr_name_off, 0, 0, 0, attr_offset, len(attrs), 0, 1, 0, 0)
+    # sh_type=0 (SHT_NULL? Actually .ARM.attributes is SHT_ARM_ATTRIBUTES=0x70000003, but validator only looks for name)
+    # The validator searches by name ".ARM.attributes", not by type. So type can be 0.
+    # But to be safe, use the same type as make_elf: 0x70000003
+    # Let's check make_elf: it uses 0x70000003 for .ARM.attributes section type.
+    # So we should use that.
+    # Actually, the validator only checks section name, not type. But let's use the correct type.
+    # The section header at offset 4*40 currently has type 0. Let's fix it.
+    # We'll repack the 4th section header with correct type.
+    struct.pack_into("<IIIIIIIIII", sections, 4 * ELF.ELF_SECTION_HEADER_SIZE,
+                     attr_name_off, 0x70000003, 0, 0, attr_offset, len(attrs), 0, 1, 0, 0)
 
-    return bytes(header + sections + dynsym + dynstr + attrs + names)
+    # Concatenate all parts
+    return bytes(header + sections + dynsym + dynstr + shstrtab + attrs)
 
 
 class ElfParserTests(unittest.TestCase):
