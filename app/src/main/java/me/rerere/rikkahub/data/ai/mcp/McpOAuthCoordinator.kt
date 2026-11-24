@@ -55,8 +55,9 @@ internal class McpOAuthCoordinator(
             val attempt = authorizationAttempts.begin(config.id)
             authorizationJobs.remove(config.id)?.cancel()
             val job = appScope.launch(start = CoroutineStart.LAZY) {
-                updateStatus(config.id, McpStatus.Authorizing)
                 try {
+                    ensureAuthorizationAttemptActive(config.id, attempt)
+                    updateStatus(config.id, McpStatus.Authorizing)
                     authorize(config, context.applicationContext, attempt)
                 } catch (e: CancellationException) {
                     throw e
