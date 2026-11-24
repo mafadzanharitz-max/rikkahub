@@ -16,6 +16,14 @@ class WebDavResourceHrefTest {
     }
 
     @Test
+    fun preservesLiteralPercentEncodedResourceNames() {
+        assertEquals(
+            "https://dav.example.com/dav/user/backup%25final.zip",
+            validateWebDavResourceHref(base, "backup%25final.zip"),
+        )
+    }
+
+    @Test
     fun acceptsAbsoluteSameOriginHrefWithinCollection() {
         assertEquals(
             "https://dav.example.com/dav/user/backup.zip",
