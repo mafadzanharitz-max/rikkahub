@@ -21,6 +21,10 @@ SPEC.loader.exec_module(ELF)
 
 REQUIRED = sorted(ELF.REQUIRED_LIBRARIES)
 
+# Elf32_Sym format: st_name(I), st_value(I), st_size(I), st_info(B), st_other(B), st_shndx(H) = 16 bytes
+SYM_FMT = "<IIIBBH"
+SYM_SIZE = 16
+
 
 def uleb(value: int) -> bytes:
     out = bytearray()
@@ -74,13 +78,13 @@ def make_elf_with_dynsym(symbols: list[str]) -> bytes:
         dynstr.extend(sym.encode("ascii"))
         dynstr.append(0)
 
-    # .dynsym (16 bytes/entry)
-    SYM_SIZE = 16
+    # .dynsym (16 bytes/entry, Elf32_Sym format)
     dynsym = bytearray(SYM_SIZE)  # null entry
     for sym in symbols:
         st_name = sym_name_off[sym]
-        struct.pack_into("<IBBHHI", dynsym, len(dynsym),
-                         st_name, 0x12, 0, 0, 0, 0)  # STB_GLOBAL<<4 | STT_FUNC
+        # Elf32_Sym: st_name(I), st_value(I), st_size(I), st_info(B), st_other(B), st_shndx(H)
+        struct.pack_into(SYM_FMT, dynsym, len(dynsym),
+                         st_name, 0, 0, 0x12, 0, 0)  # STB_GLOBAL<<4 | STT_FUNC
 
     # .shstrtab
     shstrtab = b"\0.dynsym\0.dynstr\0.shstrtab\0.ARM.attributes\0"
@@ -118,7 +122,7 @@ def make_elf_with_dynsym(symbols: list[str]) -> bytes:
     # [1] .dynsym
     n1 = shstrtab.find(b".dynsym\0") + 1
     struct.pack_into("<IIIIIIIIII", secs, ELF.ELF_SECTION_HEADER_SIZE,
-                     n1, 11, 2, 0, dynsym_off, len(dynsym), 2, 16, 4, 0)
+                     n1, 11, 2, 0, dynsym_off, len(dynsym), 2, SYM_SIZE, 4, 0)
     # type=11(SHT_DYNSYM), flags=2(SHF_ALLOC), link=2(.dynstr), info=0, align=4, entsize=16
 
     # [2] .dynstr
