@@ -185,18 +185,18 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
     SYM_ENTRY_SIZE = 16
     SYM_FMT = "<IIIBBH"  # st_name, st_value, st_size, st_info, st_other, st_shndx
     if len(elf) < ELF_HEADER_SIZE:
-        return
+        fail(f"{lib_name}: truncated ELF header; required symbols cannot be verified")
     section_offset = struct.unpack_from("<I", elf, 32)[0]
     section_entry_size, section_count, string_index = struct.unpack_from(
         "<HHH", elf, 46
     )
     if section_entry_size != ELF_SECTION_HEADER_SIZE or section_count == 0:
-        return
+        fail(f"{lib_name}: missing or unsupported ELF section header table")
     table_end = section_offset + section_entry_size * section_count
     if section_offset < ELF_HEADER_SIZE or table_end > len(elf):
-        return
+        fail(f"{lib_name}: ELF section header table is out of bounds")
     if string_index >= section_count:
-        return
+        fail(f"{lib_name}: invalid section-name string table index")
 
     sections = [
         struct.unpack_from("<IIIIIIIIII", elf, section_offset + i * section_entry_size)
@@ -206,31 +206,36 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
     dynsym = None
     dynstr = None
     for section in sections:
-        name_offset = section[0]
-        if name_offset >= len(elf):
-            continue
-        sh_type = section[1]
-        if sh_type == 11:  # SHT_DYNSYM
+        if section[1] == 11:  # SHT_DYNSYM
+            if dynsym is not None:
+                fail(f"{lib_name}: multiple dynamic symbol tables")
             dynsym = section
-        elif sh_type == 3 and section[4] > 0:  # SHT_STRTAB, candidate for .dynstr
-            pass
 
-    if not dynsym:
-        return  # No dynamic symbol table, can't verify
+    if dynsym is None:
+        fail(f"{lib_name}: missing dynamic symbol table; required symbols cannot be verified")
 
     # Find .dynstr via dynsym's sh_link
     # Section header fields: [sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize]
     dynstr_idx = dynsym[6]  # sh_link
     if dynstr_idx >= section_count:
-        return
+        fail(f"{lib_name}: dynamic symbol table has invalid string-table link")
     dynstr_section = sections[dynstr_idx]
     if dynstr_section[1] != 3:  # SHT_STRTAB
-        return
+        fail(f"{lib_name}: dynamic symbol table link is not a string table")
 
     dynsym_offset, dynsym_size = dynsym[4], dynsym[5]
     dynstr_offset, dynstr_size = dynstr_section[4], dynstr_section[5]
-    if dynsym_offset + dynsym_size > len(elf) or dynstr_offset + dynstr_size > len(elf):
-        return
+    if (
+        dynsym[9] != SYM_ENTRY_SIZE
+        or dynsym_size == 0
+        or dynsym_size % SYM_ENTRY_SIZE != 0
+        or dynstr_size == 0
+        or dynsym_offset < ELF_HEADER_SIZE
+        or dynstr_offset < ELF_HEADER_SIZE
+        or dynsym_offset + dynsym_size > len(elf)
+        or dynstr_offset + dynstr_size > len(elf)
+    ):
+        fail(f"{lib_name}: malformed or out-of-bounds dynamic symbol/string table")
 
     dynsym_data = elf[dynsym_offset:dynsym_offset + dynsym_size]
     dynstr_data = elf[dynstr_offset:dynstr_offset + dynstr_size]
@@ -246,10 +251,10 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
         if st_name == 0:
             continue
         if st_name >= len(dynstr_data):
-            continue
+            fail(f"{lib_name}: dynamic symbol name offset is out of bounds")
         name_end = dynstr_data.find(b"\0", st_name)
         if name_end < 0:
-            continue
+            fail(f"{lib_name}: unterminated dynamic symbol name")
         sym_name = dynstr_data[st_name:name_end].decode("ascii", errors="ignore")
         if sym_name in REQUIRED_SYMBOLS[lib_name]:
             found.add(sym_name)
