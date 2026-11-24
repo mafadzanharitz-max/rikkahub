@@ -9,6 +9,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Call
+import okhttp3.Dns
 import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -16,15 +17,96 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.Proxy
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val TAG = "McpOAuthDiscovery"
 
+/**
+ * DNS boundary for OAuth metadata discovery. Every address returned for a hostname is
+ * checked immediately before OkHttp connects; mixed public/private DNS answers fail closed.
+ */
+internal object McpOAuthNetworkPolicy {
+    fun validateResolvedAddresses(hostname: String, addresses: List<InetAddress>) {
+        require(addresses.isNotEmpty()) { "DNS returned no addresses" }
+        val isLoopbackName = hostname.equals("localhost", ignoreCase = true)
+        require(addresses.all { address ->
+            if (isLoopbackName) address.isLoopbackAddress
+            else isPubliclyRoutable(address)
+        }) { "OAuth discovery hostname resolved to a non-public address" }
+    }
+
+    fun isPubliclyRoutable(address: InetAddress): Boolean {
+        if (address.isAnyLocalAddress || address.isLoopbackAddress ||
+            address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress
+        ) return false
+
+        val bytes = address.address.map { it.toInt() and 0xff }
+        if (address is Inet4Address) {
+            val a = bytes[0]
+            val b = bytes[1]
+            val c = bytes[2]
+            return when {
+                a == 0 || a == 10 || a == 127 || a >= 224 -> false
+                a == 100 && b in 64..127 -> false // Shared address space (100.64/10)
+                a == 169 && b == 254 -> false
+                a == 172 && b in 16..31 -> false
+                a == 192 && b == 168 -> false
+                a == 192 && b == 0 && c == 0 -> false
+                a == 192 && b == 0 && c == 2 -> false
+                a == 198 && b in 18..19 -> false
+                a == 198 && b == 51 && c == 100 -> false
+                a == 203 && b == 0 && c == 113 -> false
+                else -> true
+            }
+        }
+
+        if (address is Inet6Address) {
+            // IPv4-mapped IPv6 must obey the IPv4 policy too.
+            if (bytes.take(10).all { it == 0 } && bytes[10] == 255 && bytes[11] == 255) {
+                return isPubliclyRoutable(InetAddress.getByAddress(bytes.takeLast(4).map { it.toByte() }.toByteArray()))
+            }
+            // Only global-unicast 2000::/3 is eligible. Reject transition, documentation,
+            // benchmarking and other special-purpose ranges within that allocation.
+            if ((bytes[0] and 0xe0) != 0x20) return false
+            if (bytes[0] == 0x20 && bytes[1] == 0x01 &&
+                (bytes[2] == 0x00 && bytes[3] == 0x00 || // Teredo
+                 bytes[2] == 0x00 && bytes[3] == 0x02 || // Benchmarking
+                 bytes[2] == 0x0d && bytes[3] == 0xb8) // Documentation
+            ) return false
+            if (bytes[0] == 0x20 && bytes[1] == 0x02) return false // 6to4
+            return true
+        }
+
+        return false
+    }
+
+    val publicDns: Dns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            val addresses = Dns.SYSTEM.lookup(hostname)
+            validateResolvedAddresses(hostname, addresses)
+            return addresses
+        }
+    }
+}
+
 /** MCP 授权规范特有的资源服务器与授权服务器元数据发现。 */
 internal class McpOAuthDiscoveryClient(
     private val httpClient: OkHttpClient,
 ) {
+    private val discoveryHttpClient = httpClient.newBuilder()
+        // Metadata discovery must not silently cross origins or downgrade via redirects.
+        .followRedirects(false)
+        .followSslRedirects(false)
+        // Avoid proxy-side DNS resolution bypassing the validated DNS boundary.
+        .proxy(Proxy.NO_PROXY)
+        .dns(McpOAuthNetworkPolicy.publicDns)
+        .build()
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -197,7 +279,7 @@ internal class McpOAuthDiscoveryClient(
 
     private suspend fun executeRaw(request: Request): Response =
         suspendCancellableCoroutine { continuation ->
-            val call = httpClient.newCall(request)
+            val call = discoveryHttpClient.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
