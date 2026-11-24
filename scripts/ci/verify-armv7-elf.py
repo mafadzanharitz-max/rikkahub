@@ -257,7 +257,12 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
             fail(f"{lib_name}: unterminated dynamic symbol name")
         sym_name = dynstr_data[st_name:name_end].decode("ascii", errors="ignore")
         if sym_name in REQUIRED_SYMBOLS[lib_name]:
-            found.add(sym_name)
+            # Required APIs must be exported definitions, not merely undefined
+            # imports that happen to have the same names.
+            binding = st_info >> 4
+            visibility = st_other & 0x03
+            if st_shndx != 0 and binding in (1, 2) and visibility in (0, 3):
+                found.add(sym_name)
 
     required = REQUIRED_SYMBOLS[lib_name]
     missing = required - found
