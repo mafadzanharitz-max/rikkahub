@@ -53,6 +53,8 @@ jobs:
           cfg = Path("fork/config.json")
           data = json.loads(cfg.read_text())
           data["repository"] = "mafadzanharitz-max/rikkahub"
+          # Align NDK version with upstream sqlite-android (28.2.13676358) to avoid toolchain mismatch
+          data["ndk"] = "28.2.13676358"
           cfg.write_text(json.dumps(data, indent=2) + "\n")
           for name in ("Armv7Updates.kt", "Armv7UpdatesTest.kt"):
               path = Path("fork/templates") / name
@@ -172,7 +174,7 @@ jobs:
               for i, ch in enumerate(value):
                   if ch == "\\":
                       out.append("\\\\")
-                  elif ch in "=:#!" or (ch == " " and i == 0):
+                  elif ch in "=:#! " or (ch == " " and i == 0):
                       out.append("\\" + ch)
                   else:
                       out.append(ch)
