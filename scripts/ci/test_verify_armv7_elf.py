@@ -8,6 +8,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -131,6 +132,49 @@ class ElfParserTests(unittest.TestCase):
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "unexpected native library paths"):
+                    ELF.main()
+
+    def test_apk_rejects_noncanonical_native_library_paths(self):
+        malformed_paths = (
+            f"lib/armeabi-v7a/./{REQUIRED[0]}",
+            f"lib//armeabi-v7a/{REQUIRED[0]}",
+        )
+        for malformed_path in malformed_paths:
+            with self.subTest(path=malformed_path):
+                with tempfile.TemporaryDirectory() as directory:
+                    apk = Path(directory) / "noncanonical.apk"
+                    with zipfile.ZipFile(apk, "w") as archive:
+                        archive.writestr(malformed_path, make_elf(ELF.ARMV7_ARCH))
+                        for name in REQUIRED[1:]:
+                            archive.writestr(
+                                f"lib/armeabi-v7a/{name}",
+                                make_elf(ELF.ARMV7_ARCH),
+                            )
+                    with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                        with self.assertRaisesRegex(
+                            SystemExit, "unexpected native library paths"
+                        ):
+                            ELF.main()
+
+    def test_apk_rejects_duplicate_native_library_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "duplicate.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                for name in REQUIRED:
+                    archive.writestr(
+                        f"lib/armeabi-v7a/{name}",
+                        make_elf(ELF.ARMV7_ARCH),
+                    )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    archive.writestr(
+                        f"lib/armeabi-v7a/{REQUIRED[0]}",
+                        make_elf(ELF.ARMV7_ARCH),
+                    )
+            with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
+                with self.assertRaisesRegex(
+                    SystemExit, "duplicate native library paths"
+                ):
                     ELF.main()
 
     def test_apk_rejects_missing_required_library(self):
