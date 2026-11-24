@@ -79,7 +79,7 @@ internal class McpOAuthDiscoveryClient(
                 Log.i(TAG, "Accepted protected resource metadata for the requested resource")
                 return@withContext metadata
             }
-            error("无法发现与请求资源匹 dengan matching resource metadata")
+            error("无法发现与请求资源匹配的受保护资源元数据")
         }
 
     /** 依次尝试 RFC 8414 与 OIDC Discovery 的 well-known 路径。 */
@@ -161,7 +161,9 @@ internal class McpOAuthDiscoveryClient(
 
     private fun isSecureMetadataUrl(value: String): Boolean {
         val url = value.toHttpUrlOrNull() ?: return false
-        return url.scheme == "https" &&
+        val loopbackHttp = url.scheme == "http" &&
+            (url.host == "localhost" || url.host == "127.0.0.1" || url.host == "::1")
+        return (url.scheme == "https" || loopbackHttp) &&
             url.host.isNotBlank() &&
             url.username.isEmpty() &&
             url.password.isEmpty() &&
