@@ -12,6 +12,16 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import org.tukaani.xz.XZInputStream
 
+// Kotlin 2.0 compatibility: ByteArray.indexOf(element, fromIndex) removed from stdlib
+private fun ByteArray.indexOf(element: Byte, fromIndex: Int): Int {
+    if (fromIndex < 0) return indexOf(element)
+    if (fromIndex >= size) return -1
+    for (i in fromIndex until size) {
+        if (this[i] == element) return i
+    }
+    return -1
+}
+
 class RootfsInstaller(
     private val manager: WorkspaceManager,
     private val patcher: RootfsPatcher = RootfsPatcher(),
