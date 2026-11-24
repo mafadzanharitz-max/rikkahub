@@ -21,6 +21,8 @@ import io.ktor.util.cio.readChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.sync.copyBackupStreamToFile
+import me.rerere.rikkahub.data.sync.MAX_BACKUP_ARCHIVE_BYTES
 import me.rerere.rikkahub.data.sync.runCatchingCancellable
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
@@ -195,15 +197,12 @@ class WebDavClient(
                     throw WebDavException("Failed to download: ${response.status}", response.status.value, "")
                 }
 
-                val channel = response.bodyAsChannel()
-                targetFile.outputStream().use { outputStream ->
-                    val buffer = ByteArray(8192)
-                    while (!channel.isClosedForRead) {
-                        val bytesRead = channel.readAvailable(buffer)
-                        if (bytesRead > 0) {
-                            outputStream.write(buffer, 0, bytesRead)
-                        }
-                    }
+                val contentLength = response.headers["Content-Length"]?.toLongOrNull()
+                require(contentLength == null || contentLength in 0..MAX_BACKUP_ARCHIVE_BYTES) {
+                    "Backup archive exceeds the maximum download size"
+                }
+                response.bodyAsChannel().toInputStream().use { input ->
+                    copyBackupStreamToFile(input, targetFile)
                 }
                 Log.d(TAG, "downloadToFile success: downloaded ${targetFile.length()} bytes")
             }
