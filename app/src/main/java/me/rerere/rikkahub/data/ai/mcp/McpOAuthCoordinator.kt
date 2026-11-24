@@ -272,6 +272,7 @@ internal class McpOAuthCoordinator(
                     authorizationEndpoint = authorizationEndpoint,
                     tokenEndpoint = tokenEndpoint,
                     registrationEndpoint = metadata.registrationEndpoint,
+                    authorizationServerIssuer = issuer,
                     redirectUri = redirectUri,
                     scope = token.scope ?: scope,
                     accessToken = token.accessToken,
