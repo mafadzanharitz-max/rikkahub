@@ -102,7 +102,7 @@ internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: 
  * Enforce the archive size limit while writing. The encrypted header is emitted before this
  * wrapper is created, so the payload budget reserves its fixed 37-byte header.
  */
-private class LimitedBackupOutputStream(
+internal class LimitedBackupOutputStream(
     output: OutputStream,
     private val maxBytes: Long,
 ) : FilterOutputStream(output) {
