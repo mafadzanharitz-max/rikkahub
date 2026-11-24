@@ -5,9 +5,12 @@ import me.rerere.ai.provider.OAuthCredential
 import me.rerere.oauth.OAuthHttpClient
 
 /**
- * ChatGPT 账号登录的协议参数，与 openai/codex（codex-rs/login）保持一致。
+ * Legacy ChatGPT account OAuth parameters copied from the Codex CLI flow.
  *
- * client_id 和回调地址是 Codex CLI 在 OpenAI 授权服务器上注册的，回调地址必须原样使用。
+ * This client ID is not a RikkaHub-issued SIWC registration. Permission to reuse it has not
+ * been established, and this implementation is not verified against the current open-source
+ * SIWC registration and ID-token validation requirements. See
+ * docs/security/SIWC_COMPATIBILITY_AUDIT.md before changing or claiming this login flow.
  */
 internal object ChatGPTAuth {
     private const val ISSUER = "https://auth.openai.com"
