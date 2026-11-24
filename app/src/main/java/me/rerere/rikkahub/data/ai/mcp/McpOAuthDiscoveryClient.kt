@@ -94,6 +94,13 @@ internal object McpOAuthNetworkPolicy {
         }
     }
 
+    fun validateUrlHost(value: String) {
+        val url = value.toHttpUrlOrNull()
+            ?: throw IllegalArgumentException("Invalid OAuth endpoint URL")
+        val addresses = Dns.SYSTEM.lookup(url.host)
+        validateResolvedAddresses(url.host, addresses)
+    }
+
     fun newSafeClient(base: OkHttpClient): OkHttpClient = base.newBuilder()
         // OAuth endpoints must not redirect to an unvalidated host or downgrade transport.
         .followRedirects(false)
