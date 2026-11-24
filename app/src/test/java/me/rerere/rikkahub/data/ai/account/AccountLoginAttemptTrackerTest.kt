@@ -42,4 +42,16 @@ class AccountLoginAttemptTrackerTest {
         assertFalse(tracker.isCurrent(firstProvider, first))
         assertTrue(tracker.isCurrent(secondProvider, second))
     }
+    @Test
+    fun `new login supersedes a pending logout mutation`() {
+        val tracker = AccountLoginAttemptTracker()
+        val providerId = Uuid.random()
+
+        val logoutAttempt = tracker.invalidate(providerId)
+        val loginAttempt = tracker.begin(providerId)
+
+        assertFalse(tracker.isCurrent(providerId, logoutAttempt))
+        assertTrue(tracker.isCurrent(providerId, loginAttempt))
+    }
+
 }
