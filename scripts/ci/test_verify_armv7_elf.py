@@ -73,6 +73,12 @@ def make_elf(
     return bytes(header + sections + names + attrs)
 
 
+
+def make_apk_library(name: str, *architectures: int) -> bytes:
+    elf_type = ELF.ET_EXEC if name == "libproot_loader.so" else ELF.ET_DYN
+    return make_elf(*architectures, elf_type=elf_type)
+
+
 class ElfParserTests(unittest.TestCase):
     def test_accepts_armv7_shared_object(self):
         self.assertEqual(ELF.ARMV7_ARCH, ELF.arm_cpu_arch(make_elf(ELF.ARMV7_ARCH), "fixture.so"))
@@ -158,7 +164,7 @@ class ApkIntegrationTests(unittest.TestCase):
             with zipfile.ZipFile(apk, "w") as archive:
                 for name in REQUIRED:
                     elf_type = (
-                        ELF.ET_EXEC if name == "libsimple.so" else ELF.ET_DYN
+                        ELF.ET_EXEC if name == "libsimple.so" else (ELF.ET_EXEC if name == "libproot_loader.so" else ELF.ET_DYN)
                     )
                     archive.writestr(
                         f"lib/armeabi-v7a/{name}",
@@ -173,7 +179,7 @@ class ApkIntegrationTests(unittest.TestCase):
             apk = Path(directory) / "valid.apk"
             with zipfile.ZipFile(apk, "w") as archive:
                 for name in REQUIRED:
-                    archive.writestr(f"lib/armeabi-v7a/{name}", make_elf(ELF.ARMV7_ARCH))
+                    archive.writestr(f"lib/armeabi-v7a/{name}", make_apk_library(name, ELF.ARMV7_ARCH))
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 ELF.main()
 
@@ -182,7 +188,7 @@ class ApkIntegrationTests(unittest.TestCase):
             apk = Path(directory) / "wrong-abi.apk"
             with zipfile.ZipFile(apk, "w") as archive:
                 for name in REQUIRED:
-                    archive.writestr(f"lib/arm64-v8a/{name}", make_elf(ELF.ARMV7_ARCH))
+                    archive.writestr(f"lib/arm64-v8a/{name}", make_apk_library(name, ELF.ARMV7_ARCH))
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "unexpected native library paths"):
                     ELF.main()
@@ -194,7 +200,7 @@ class ApkIntegrationTests(unittest.TestCase):
                 for name in REQUIRED:
                     archive.writestr(
                         f"lib/armeabi-v7a/nested/{name}",
-                        make_elf(ELF.ARMV7_ARCH),
+                        make_apk_library(name, ELF.ARMV7_ARCH),
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "unexpected native library paths"):
@@ -210,11 +216,11 @@ class ApkIntegrationTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as directory:
                     apk = Path(directory) / "noncanonical.apk"
                     with zipfile.ZipFile(apk, "w") as archive:
-                        archive.writestr(malformed_path, make_elf(ELF.ARMV7_ARCH))
+                        archive.writestr(malformed_path, make_apk_library(name, ELF.ARMV7_ARCH))
                         for name in REQUIRED[1:]:
                             archive.writestr(
                                 f"lib/armeabi-v7a/{name}",
-                                make_elf(ELF.ARMV7_ARCH),
+                                make_apk_library(name, ELF.ARMV7_ARCH),
                             )
                     with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                         with self.assertRaisesRegex(
@@ -229,13 +235,13 @@ class ApkIntegrationTests(unittest.TestCase):
                 for name in REQUIRED:
                     archive.writestr(
                         f"lib/armeabi-v7a/{name}",
-                        make_elf(ELF.ARMV7_ARCH),
+                        make_apk_library(name, ELF.ARMV7_ARCH),
                     )
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", UserWarning)
                     archive.writestr(
                         f"lib/armeabi-v7a/{REQUIRED[0]}",
-                        make_elf(ELF.ARMV7_ARCH),
+                        make_apk_library(name, ELF.ARMV7_ARCH),
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(
@@ -248,7 +254,7 @@ class ApkIntegrationTests(unittest.TestCase):
             apk = Path(directory) / "missing.apk"
             with zipfile.ZipFile(apk, "w") as archive:
                 for name in REQUIRED[1:]:
-                    archive.writestr(f"lib/armeabi-v7a/{name}", make_elf(ELF.ARMV7_ARCH))
+                    archive.writestr(f"lib/armeabi-v7a/{name}", make_apk_library(name, ELF.ARMV7_ARCH))
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "missing required native libraries"):
                     ELF.main()
@@ -260,7 +266,7 @@ class ApkIntegrationTests(unittest.TestCase):
                 for name in REQUIRED:
                     archive.writestr(
                         f"lib/armeabi-v7a/{name}",
-                        make_elf(9) if name == REQUIRED[0] else make_elf(ELF.ARMV7_ARCH),
+                        make_elf(9) if name == REQUIRED[0] else make_apk_library(name, ELF.ARMV7_ARCH),
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "expected Tag_CPU_arch=10"):
