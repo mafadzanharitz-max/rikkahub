@@ -93,20 +93,22 @@ internal object McpOAuthNetworkPolicy {
             return addresses
         }
     }
+
+    fun newSafeClient(base: OkHttpClient): OkHttpClient = base.newBuilder()
+        // OAuth endpoints must not redirect to an unvalidated host or downgrade transport.
+        .followRedirects(false)
+        .followSslRedirects(false)
+        // Proxy-side DNS would bypass this process's validated DNS result.
+        .proxy(Proxy.NO_PROXY)
+        .dns(publicDns)
+        .build()
 }
 
 /** MCP 授权规范特有的资源服务器与授权服务器元数据发现。 */
 internal class McpOAuthDiscoveryClient(
     private val httpClient: OkHttpClient,
 ) {
-    private val discoveryHttpClient = httpClient.newBuilder()
-        // Metadata discovery must not silently cross origins or downgrade via redirects.
-        .followRedirects(false)
-        .followSslRedirects(false)
-        // Avoid proxy-side DNS resolution bypassing the validated DNS boundary.
-        .proxy(Proxy.NO_PROXY)
-        .dns(McpOAuthNetworkPolicy.publicDns)
-        .build()
+    private val discoveryHttpClient = McpOAuthNetworkPolicy.newSafeClient(httpClient)
 
     private val json = Json {
         ignoreUnknownKeys = true
