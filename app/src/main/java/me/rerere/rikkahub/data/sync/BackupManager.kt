@@ -29,6 +29,8 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.SecretCipher
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FilterOutputStream
+import java.io.OutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.nio.file.Files
@@ -96,6 +98,31 @@ internal suspend fun copyBackupStreamToFile(input: java.io.InputStream, target: 
     }
 }
 
+/**
+ * Enforce the archive size limit while writing. The encrypted header is emitted before this
+ * wrapper is created, so the payload budget reserves its fixed 37-byte header.
+ */
+private class LimitedBackupOutputStream(
+    output: OutputStream,
+    private val maxBytes: Long,
+) : FilterOutputStream(output) {
+    private var written = 0L
+
+    override fun write(value: Int) {
+        check(written < maxBytes) { "Backup archive exceeds the maximum supported size" }
+        out.write(value)
+        written++
+    }
+
+    override fun write(buffer: ByteArray, offset: Int, length: Int) {
+        require(length >= 0 && length.toLong() <= maxBytes - written) {
+            "Backup archive exceeds the maximum supported size"
+        }
+        out.write(buffer, offset, length)
+        written += length
+    }
+}
+
 /** Shared archive format and restore lifecycle for local, WebDAV and S3 backups. */
 class BackupManager(
     private val context: Context,
@@ -111,7 +138,12 @@ class BackupManager(
         val staging = Files.createTempDirectory(context.cacheDir.toPath(), "backup-").toFile()
         try {
             val settings = settingsStore.awaitLoaded()
-            ZipOutputStream(encryptedOutputStream(archive, password)).use { zip ->
+            ZipOutputStream(
+                LimitedBackupOutputStream(
+                    encryptedOutputStream(archive, password),
+                    MAX_BACKUP_ARCHIVE_BYTES - 37L,
+                )
+            ).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
