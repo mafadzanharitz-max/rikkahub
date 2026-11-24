@@ -33,7 +33,8 @@ private const val TAG = "McpOAuthDiscovery"
 internal object McpOAuthNetworkPolicy {
     fun validateResolvedAddresses(hostname: String, addresses: List<InetAddress>) {
         require(addresses.isNotEmpty()) { "DNS returned no addresses" }
-        val isLoopbackName = hostname.equals("localhost", ignoreCase = true)
+        val isLoopbackName = hostname.equals("localhost", ignoreCase = true) ||
+            hostname == "127.0.0.1" || hostname == "::1"
         require(addresses.all { address ->
             if (isLoopbackName) address.isLoopbackAddress
             else isPubliclyRoutable(address)
