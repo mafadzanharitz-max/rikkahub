@@ -76,7 +76,7 @@ class WebDavSync(
         try {
             // Download backup file directly to file to avoid OOM
             Log.i(TAG, "Downloading remote backup")
-            client.downloadToFile(item.displayName, backupFile).getOrThrow()
+            client.downloadToFile(item.href, backupFile).getOrThrow()
 
             Log.i(TAG, "restore: Downloaded ${backupFile.length().fileSizeToString()}")
 
@@ -93,7 +93,7 @@ class WebDavSync(
 
     suspend fun deleteBackupFile(config: WebDavConfig, item: WebDavBackupItem) = withContext(Dispatchers.IO) {
         val client = getClient(config)
-        client.delete(item.displayName).getOrThrow()
+        client.delete(item.href).getOrThrow()
         Log.i(TAG, "Remote backup deleted")
     }
 
