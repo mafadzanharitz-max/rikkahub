@@ -122,12 +122,15 @@ def arm_cpu_arch(data: bytes, name: str) -> int:
         vendor, cursor = read_c_string(attributes, offset + 4, vendor_end)
         if vendor == AEABI_VENDOR:
             while cursor < vendor_end:
+                subsection_start = cursor
                 subsection_tag, cursor = read_uleb128(attributes, cursor, vendor_end)
                 if cursor + 4 > vendor_end:
                     raise ValueError("truncated ARM attribute subsection")
                 subsection_length = struct.unpack_from("<I", attributes, cursor)[0]
                 payload_start = cursor + 4
-                subsection_end = cursor + subsection_length
+                # AAELF32 defines this size as including the ULEB128 tag,
+                # the 4-byte size field, and the subsection payload.
+                subsection_end = subsection_start + subsection_length
                 if subsection_length < 5 or subsection_end > vendor_end:
                     raise ValueError("invalid ARM attribute subsection length")
                 if subsection_tag == TAG_FILE:

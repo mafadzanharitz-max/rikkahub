@@ -35,7 +35,7 @@ def arm_attributes(*architectures: int) -> bytes:
     subsections = bytearray()
     for architecture in architectures:
         payload = uleb(ELF.TAG_CPU_ARCH) + uleb(architecture)
-        subsection_length = 4 + len(payload)
+        subsection_length = len(uleb(ELF.TAG_FILE)) + 4 + len(payload)
         subsections += uleb(ELF.TAG_FILE)
         subsections += struct.pack("<I", subsection_length)
         subsections += payload
