@@ -10,6 +10,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import me.rerere.rikkahub.data.sync.copyBackupStreamToFile
+import me.rerere.rikkahub.data.sync.MAX_BACKUP_ARCHIVE_BYTES
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.jvm.javaio.toInputStream
@@ -175,10 +177,12 @@ class S3Client(
                     throw S3Exception("Failed to download object: ${response.status}", "")
                 }
 
+                val contentLength = response.headers["content-length"]?.toLongOrNull()
+                require(contentLength == null || contentLength in 0..MAX_BACKUP_ARCHIVE_BYTES) {
+                    "Backup archive exceeds the maximum download size"
+                }
                 response.bodyAsChannel().toInputStream().use { input ->
-                    targetFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                    copyBackupStreamToFile(input, targetFile)
                 }
                 Log.d(TAG, "downloadObjectToFile success: downloaded ${targetFile.length()} bytes")
             }
