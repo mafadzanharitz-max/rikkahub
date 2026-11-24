@@ -185,10 +185,15 @@ internal class McpOAuthCoordinator(
             Log.i(TAG, "Protected resource discovery failed; using server origin (${e.javaClass.simpleName})")
             null
         }
+        ensureAuthorizationAttemptActive(config.id, attempt)
+        ensureAuthorizationTargetUnchanged(config)
+
         val issuer = protectedResource?.authorizationServers?.firstOrNull()
             ?: McpOAuthDiscoveryClient.serverOrigin(serverUrl)
             ?: error("无法确定授权服务器")
         val metadata = discoveryClient.discoverAuthorizationServer(issuer)
+        ensureAuthorizationAttemptActive(config.id, attempt)
+        ensureAuthorizationTargetUnchanged(config)
         val authorizationEndpoint = metadata.authorizationEndpoint
             ?: error("授权服务器缺少 authorization_endpoint")
         val tokenEndpoint = metadata.tokenEndpoint
@@ -238,6 +243,8 @@ internal class McpOAuthCoordinator(
                 )
                 clientId = registration.clientId
                 clientSecret = registration.clientSecret
+                ensureAuthorizationAttemptActive(config.id, attempt)
+                ensureAuthorizationTargetUnchanged(config)
             }
 
             persistAuthorizationState(
@@ -291,6 +298,8 @@ internal class McpOAuthCoordinator(
                     resources = listOf(resource),
                 )
             )
+            ensureAuthorizationAttemptActive(config.id, attempt)
+            ensureAuthorizationTargetUnchanged(config)
             persistAuthorizationState(
                 config,
                 attempt,
