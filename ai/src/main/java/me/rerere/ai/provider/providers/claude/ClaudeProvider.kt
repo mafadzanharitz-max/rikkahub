@@ -69,6 +69,13 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.logRequestBody
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
+import me.rerere.ai.util.configureReferHeaders
+import me.rerere.ai.util.configureSessionHeaders
+import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.json
+import me.rerere.ai.util.logRequestBody
+import me.rerere.ai.util.mergeCustomBody
+import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.common.http.sse.newEventSource
@@ -310,7 +317,7 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
         logRequestBody(TAG, "generateText") { json.encodeToString(requestBody) }
 
         val response = client.newCall(request).await()
-        response.use { response ->
+        return response.use { response ->
             if (!response.isSuccessful) {
                 throw ProviderHttpException(response.code)
             }
