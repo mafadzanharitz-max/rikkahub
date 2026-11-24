@@ -31,6 +31,39 @@ import java.io.StringReader
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+/**
+ * Resolve a server-provided DAV href only when it stays on the configured origin
+ * and within the configured collection path. URI.path is decoded, so encoded dot
+ * segments are rejected as well as literal traversal segments.
+ */
+internal fun validateWebDavResourceHref(baseUrl: String, href: String): String {
+    require(href.isNotBlank()) { "Empty WebDAV resource href" }
+    val base = java.net.URI(baseUrl.trimEnd('/') + "/")
+    val candidate = base.resolve(java.net.URI(href)).normalize()
+    val scheme = candidate.scheme ?: throw IllegalArgumentException("WebDAV href has no scheme")
+    val basePort = base.port.takeIf { it >= 0 } ?: if (base.scheme.equals("https", true)) 443 else 80
+    val candidatePort = candidate.port.takeIf { it >= 0 } ?: if (scheme.equals("https", true)) 443 else 80
+    require(
+        scheme.equals(base.scheme, ignoreCase = true) &&
+            candidate.host?.equals(base.host, ignoreCase = true) == true &&
+            candidatePort == basePort &&
+            candidate.rawUserInfo == null &&
+            candidate.rawQuery == null &&
+            candidate.rawFragment == null
+    ) { "WebDAV href points outside the configured server" }
+
+    val basePath = base.path.trimEnd('/')
+    val resourcePath = candidate.path
+    val allowed = if (basePath.isEmpty()) "/" else "$basePath/"
+    require(resourcePath == basePath || resourcePath.startsWith(allowed)) {
+        "WebDAV href points outside the configured collection"
+    }
+    require(resourcePath.split('/').none { it == "." || it == ".." }) {
+        "WebDAV href contains path traversal"
+    }
+    return candidate.toASCIIString()
+}
+
 
 private const val TAG = "WebDavClient"
 
@@ -57,34 +90,9 @@ class WebDavClient(
      * Resolve a server-provided DAV href only when it stays on the configured
      * origin and within the configured DAV collection path.
      */
-    private fun resourceUrl(href: String): String {
-        require(href.isNotBlank()) { "Empty WebDAV resource href" }
-        val base = java.net.URI(config.buildUrl().trimEnd('/') + "/")
-        val candidate = base.resolve(java.net.URI(href)).normalize()
-        val scheme = candidate.scheme ?: throw IllegalArgumentException("WebDAV href has no scheme")
-        val basePort = base.port.takeIf { it >= 0 } ?: if (base.scheme.equals("https", true)) 443 else 80
-        val candidatePort = candidate.port.takeIf { it >= 0 } ?: if (scheme.equals("https", true)) 443 else 80
-        require(
-            scheme.equals(base.scheme, ignoreCase = true) &&
-                candidate.host?.equals(base.host, ignoreCase = true) == true &&
-                candidatePort == basePort &&
-                candidate.rawUserInfo == null &&
-                candidate.rawQuery == null &&
-                candidate.rawFragment == null
-        ) { "WebDAV href points outside the configured server" }
+    private fun resourceUrl(href: String): String =
+        validateWebDavResourceHref(config.buildUrl(), href)
 
-        val basePath = base.path.trimEnd('/')
-        val resourcePath = candidate.path
-        val allowed = if (basePath.isEmpty()) "/" else "$basePath/"
-        require(
-            resourcePath == basePath ||
-                resourcePath.startsWith(allowed)
-        ) { "WebDAV href points outside the configured collection" }
-        require(resourcePath.split('/').none { it == "." || it == ".." }) {
-            "WebDAV href contains path traversal"
-        }
-        return candidate.toASCIIString()
-    }
     suspend fun put(
         path: String,
         data: ByteArray,
