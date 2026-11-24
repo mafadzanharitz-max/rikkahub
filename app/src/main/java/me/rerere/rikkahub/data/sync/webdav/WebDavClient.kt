@@ -58,8 +58,15 @@ internal fun validateWebDavResourceHref(baseUrl: String, href: String): String {
     require(resourcePath == basePath || resourcePath.startsWith(allowed)) {
         "WebDAV href points outside the configured collection"
     }
-    require(resourcePath.split('/').none { it == "." || it == ".." }) {
-        "WebDAV href contains path traversal"
+    var decodedPath = candidate.rawPath
+    repeat(4) {
+        decodedPath = java.net.URLDecoder.decode(
+            decodedPath.replace("+", "%2B"),
+            Charsets.UTF_8.name(),
+        )
+        require(decodedPath.split('/').none { it == "." || it == ".." }) {
+            "WebDAV href contains path traversal"
+        }
     }
     return candidate.toASCIIString()
 }
