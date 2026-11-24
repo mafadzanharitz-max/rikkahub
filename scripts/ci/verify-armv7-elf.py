@@ -6,7 +6,6 @@ from __future__ import annotations
 import struct
 import sys
 import zipfile
-from pathlib import PurePosixPath
 
 REQUIRED_LIBRARIES = {
     "libsimple.so",
