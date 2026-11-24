@@ -54,14 +54,19 @@ jobs:
 
           path = Path("scripts/ci/apply-overlay.py")
           source = path.read_text()
-          old = """    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
-              replace_once(fixture, 'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),',
-                           'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),\\n'
-                           '            TarTestEntry("bin/bash", content = armv7TestShellElf(), mode = 493),')
-          """
-          new = """    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
+          start_marker = '    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"\\n'
+          end_marker = '    templates = {\\n'
+          start = source.find(start_marker)
+          end = source.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0:
+              raise SystemExit("Pinned overlay fixture adaptation boundaries changed")
+          old_block = source[start:end]
+          if old_block.count("replace_once(fixture,") != 1:
+              raise SystemExit("Pinned overlay fixture patch is not the expected single fail-closed operation")
+          new_block = r'''    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"
               fixture_source = fixture.read_text()
-              fixture_target = 'val archive = tarGz(\\n            TarTestEntry("bin/", type = \'5\'),'
+              fixture_target = """val archive = tarGz(
+                      TarTestEntry("bin/", type = '5'),"""
               if fixture_target in fixture_source:
                   replace_once(fixture, fixture_target,
                                fixture_target + "\\n            TarTestEntry(\\"bin/bash\\", content = armv7TestShellElf(), mode = 493),")
@@ -69,14 +74,11 @@ jobs:
                   "fun rootfsInstallerRejectsCleartextHttpUrl()" in fixture_source
                   and "fun rootfsInstallerDownloadsAndExtractsTarGz()" not in fixture_source
               ):
-                  print("Current fork already replaced the legacy HTTP integration fixture; no archive fixture patch is needed.")
+                  print("Current fork replaced the legacy HTTP integration fixture; no archive fixture patch is needed.")
               else:
                   raise RuntimeError("Unrecognized RootFS test fixture layout; refusing to skip ARMv7 shell fixture validation")
-          """
-          if source.count(old) != 1:
-              raise SystemExit("Pinned overlay fixture patch block changed; refusing an unsafe workflow rewrite")
-          path.write_text(source.replace(old, new, 1))
-          PY
+          '''
+          path.write_text(source[:start] + new_block + source[end:])
           python3 - <<'PY'
           import json
           from pathlib import Path
