@@ -20,6 +20,7 @@ import okio.Buffer
 import okio.BufferedSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.Executors
 
@@ -83,6 +84,16 @@ class OAuthHttpClientTest {
         assertEquals("new-access", token.accessToken)
         assertEquals("new-refresh", token.refreshToken)
         assertEquals("id", token.idToken)
+    }
+
+    @Test
+    fun `state and nonce are fresh url safe random values`() {
+        val states = List(4) { client.generateState() }
+        val nonces = List(4) { client.generateNonce() }
+
+        assertEquals(4, states.toSet().size)
+        assertEquals(4, nonces.toSet().size)
+        assertTrue(nonces.all { it.length >= 40 && it.matches(Regex("[A-Za-z0-9_-]+")) })
     }
 
     @Test
