@@ -231,7 +231,11 @@ class ApkIntegrationTests(unittest.TestCase):
                     )
                     archive.writestr(
                         f"lib/armeabi-v7a/{name}",
-                        make_elf(ELF.ARMV7_ARCH, elf_type=elf_type),
+                        make_elf(
+                            ELF.ARMV7_ARCH,
+                            elf_type=elf_type,
+                            include_dynamic_symbols=name == "libsqlite3x.so",
+                        ),
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 ELF.main()
@@ -246,7 +250,11 @@ class ApkIntegrationTests(unittest.TestCase):
                     )
                     archive.writestr(
                         f"lib/armeabi-v7a/{name}",
-                        make_elf(ELF.ARMV7_ARCH, elf_type=elf_type),
+                        make_elf(
+                            ELF.ARMV7_ARCH,
+                            elf_type=elf_type,
+                            include_dynamic_symbols=name == "libsqlite3x.so",
+                        ),
                     )
             with patch.object(sys, "argv", [str(SCRIPT), str(apk)]):
                 with self.assertRaisesRegex(SystemExit, "expected ET_DYN shared object"):
