@@ -256,7 +256,19 @@ def check_required_symbols(elf: bytes, lib_name: str) -> None:
         if name_end < 0:
             fail(f"{lib_name}: unterminated dynamic symbol name")
         sym_name = dynstr_data[st_name:name_end].decode("ascii", errors="ignore")
-        if sym_name in REQUIRED_SYMBOLS[lib_name]:
+        # Required entry points must be exported, defined function symbols.
+        # Undefined imports and local/non-function entries do not prove that
+        # the library provides the API.
+        binding = st_info >> 4
+        symbol_type = st_info & 0x0F
+        visibility = st_other & 0x03
+        if (
+            sym_name in REQUIRED_SYMBOLS[lib_name]
+            and st_shndx != 0  # SHN_UNDEF
+            and binding in (1, 2)  # STB_GLOBAL or STB_WEAK
+            and symbol_type == 2  # STT_FUNC
+            and visibility in (0, 3)  # STV_DEFAULT or STV_PROTECTED
+        ):
             found.add(sym_name)
 
     required = REQUIRED_SYMBOLS[lib_name]
