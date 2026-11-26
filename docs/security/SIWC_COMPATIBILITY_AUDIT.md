@@ -2,7 +2,7 @@
 
 Status: **BLOCKED — current ChatGPT account OAuth is a legacy Codex-parameter reuse, not a verified SIWC implementation.**
 
-Audit basis: repository source at commit `aa9bac9779360dced1edc03a0a7f6c118492f899` and the public OpenAI Sign in with ChatGPT documentation and Terms reviewed on 2026-11-26.
+Audit basis: repository source at commit `ecdf763bdf8b3d111f548ce0d6c4517caea33a25` and the public OpenAI Sign in with ChatGPT documentation and Terms reviewed on 2026-11-26.
 
 ## Current implementation
 
@@ -126,7 +126,7 @@ The official preview-limitations guide adds a compatibility matrix that must be 
 Official reference:
 - https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
 
-## Fork identity / agent-name decision remains open
+## Fork identity / agent-name decision
 
-The current Android application label is `RikkaHub`, and the README identifies this repository as a fork while warning that forked versions are unrelated to upstream RikkaHub. SIWC requires the `agent_name_hint` to be the app's actual name and prohibits impersonating another open-source project. Do not automatically send the upstream `RikkaHub` name for this fork without resolving its distinct app identity. Before implementing first-time registration, choose a truthful, consistent fork-specific app identity (and align the displayed app label/branding if needed); use that exact identity as `agent_name_hint`. This audit does not unilaterally rename the app.
+Decision recorded on 2026-11-26: the project owner explicitly approved the SIWC app identity `RikkaHub ARMv7` for `agent_name_hint`. Use this exact identity consistently in first-time dynamic registration and related user-facing SIWC identification. This approval resolves the earlier open decision; it does not imply that the SIWC protocol or provider migration has been implemented.
 
