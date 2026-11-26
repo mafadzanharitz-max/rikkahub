@@ -16,9 +16,9 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -164,7 +164,10 @@ class BackupManager(
                 )
             ).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
-                val settingsJson = json.encodeSettings(settings.withoutChatGPTCredentialsForBackup(), settingsStore.launchCountFlow.first())
+                val settingsJson = json.encodeSettings(
+    settings.withoutChatGPTCredentialsForBackup(),
+    settingsStore.launchCountFlow.first(),
+)
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
                 if (includeDatabase) {
