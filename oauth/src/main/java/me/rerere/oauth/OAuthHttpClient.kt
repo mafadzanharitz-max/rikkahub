@@ -283,10 +283,15 @@ class OAuthHttpClient(
                 "slow_down" -> interval += 5
                 "access_denied" -> throw DeviceAuthorizationException(error, "Authorization was denied")
                 "expired_token" -> throw DeviceAuthorizationException(error, "Device code expired")
-                else -> throw DeviceAuthorizationException(
-                    error ?: "http_$code",
-                    "HTTP $code for ${request.tokenEndpoint}: ${body.take(300)}",
-                )
+                else -> {
+                    val safeError = error
+                        ?.takeIf { it.matches(Regex("[A-Za-z0-9._-]{1,64}")) }
+                        ?: "oauth_error"
+                    throw DeviceAuthorizationException(
+                        safeError,
+                        "OAuth device authorization failed (HTTP $code, $safeError)",
+                    )
+                }
             }
         }
         throw DeviceAuthorizationException("expired_token", "Device code expired")
@@ -306,7 +311,11 @@ class OAuthHttpClient(
         executeRaw(request).use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code} for ${request.url}: ${body.take(300)}")
+                // OAuth error bodies are untrusted and may echo authorization codes,
+                // tokens, account identifiers, or other credentials. Never include them
+                // (or query parameters) in exceptions that callers may log.
+                val endpoint = request.url.let { "${it.host}${it.encodedPath}" }
+                throw IOException("OAuth request failed (HTTP ${response.code}) at $endpoint")
             }
             return body
         }

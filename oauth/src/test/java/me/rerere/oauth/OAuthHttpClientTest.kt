@@ -270,4 +270,41 @@ class OAuthHttpClientTest {
 
         assertNotEquals("fake-main", readThread?.name)
     }
+
+    @Test
+    fun `oauth error response body is never included in exception`() = runBlocking {
+        val secret = "refresh-token-must-not-leak"
+        val client = OAuthHttpClient(
+            OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(400)
+                        .message("Bad Request")
+                        .body(
+                            """{"error":"invalid_grant","debug":"$secret"}"""
+                                .toResponseBody("application/json".toMediaType())
+                        )
+                        .build()
+                }
+                .build()
+        )
+
+        val error = runCatching {
+            client.refreshToken(
+                OAuthHttpClient.RefreshTokenRequest(
+                    tokenEndpoint = "https://auth.example.com/token?debug=$secret",
+                    clientId = "client",
+                    refreshToken = secret,
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is java.io.IOException)
+        assertTrue(error!!.message.orEmpty().contains("HTTP 400"))
+        assertTrue(!error.message.orEmpty().contains(secret))
+        assertTrue(!error.message.orEmpty().contains("?debug="))
+    }
+
 }
