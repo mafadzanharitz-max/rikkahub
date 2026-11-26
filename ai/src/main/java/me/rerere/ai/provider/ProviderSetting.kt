@@ -6,6 +6,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.uuid.Uuid
 
+/** SIWC client registration retained locally after a user signs out. */
+@Serializable
+data class ChatGPTRegistration(
+    val clientId: String,
+    val issuer: String? = null,
+    val subject: String? = null,
+    val email: String? = null,
+)
+
 /** 账号登录得到的 OAuth 凭据 */
 @Serializable
 data class OAuthCredential(
@@ -265,8 +274,19 @@ sealed class ProviderSetting {
         @Transient override val description: @Composable (() -> Unit) = {},
         @Transient override val shortDescription: @Composable (() -> Unit) = {},
         override val credential: OAuthCredential? = null,
+        val registration: ChatGPTRegistration? = null,
     ) : Account() {
-        override fun withCredential(credential: OAuthCredential?): Account = copy(credential = credential)
+        override fun withCredential(credential: OAuthCredential?): Account {
+            val nextRegistration = credential?.oauthClientId?.let { clientId ->
+                ChatGPTRegistration(
+                    clientId = clientId,
+                    issuer = credential.issuer,
+                    subject = credential.subject,
+                    email = credential.email,
+                )
+            } ?: registration
+            return copy(credential = credential, registration = nextRegistration)
+        }
 
         override fun copyProvider(
             id: Uuid,

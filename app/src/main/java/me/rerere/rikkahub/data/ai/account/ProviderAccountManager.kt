@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.provider.AccountCredentialProvider
+import me.rerere.ai.provider.ChatGPTRegistration
 import me.rerere.ai.provider.OAuthCredential
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.await
@@ -138,10 +139,23 @@ class ProviderAccountManager(
                 } else {
                     old.copy(
                         providers = old.providers.map { provider ->
-                            if (provider.id == providerId && provider is ProviderSetting.Account) {
-                                provider.withCredential(null)
-                            } else {
-                                provider
+                            if (provider.id != providerId) provider
+                            else when (provider) {
+                                is ProviderSetting.ChatGPT -> {
+                                    val current = provider.credential
+                                    val registration = provider.registration
+                                        ?: current?.oauthClientId?.let { clientId ->
+                                            ChatGPTRegistration(
+                                                clientId = clientId,
+                                                issuer = current.issuer,
+                                                subject = current.subject,
+                                                email = current.email,
+                                            )
+                                        }
+                                    provider.copy(credential = null, registration = registration)
+                                }
+                                is ProviderSetting.Account -> provider.withCredential(null)
+                                else -> provider
                             }
                         }
                     )
@@ -220,8 +234,16 @@ class ProviderAccountManager(
         context: Context,
     ): OAuthCredential = withContext(Dispatchers.IO) {
         val previous = provider.credential
-        val returningRegistration = previous?.oauthClientId != null
-        val clientId = if (returningRegistration) previous!!.oauthClientId!! else ChatGPTAuth.DYNAMIC_CLIENT_ID
+        val registration = provider.registration ?: previous?.oauthClientId?.let { clientId ->
+            ChatGPTRegistration(
+                clientId = clientId,
+                issuer = previous.issuer,
+                subject = previous.subject,
+                email = previous.email,
+            )
+        }
+        val returningRegistration = registration != null
+        val clientId = registration?.clientId ?: ChatGPTAuth.DYNAMIC_CLIENT_ID
         val pkce = oauthClient.generatePkce()
         val state = oauthClient.generateState()
         val nonce = oauthClient.generateNonce()
@@ -237,6 +259,7 @@ class ProviderAccountManager(
                     clientId = clientId,
                     hostId = hostId,
                     previous = previous,
+                    registration = registration,
                 )
             )
             withContext(Dispatchers.Main) {
@@ -272,7 +295,7 @@ class ProviderAccountManager(
             )
             val idToken = token.idToken ?: error("SIWC token response did not include an ID token")
             val identity = ChatGPTAuth.verifyIdToken(client, idToken, issuedClientId, nonce)
-            ChatGPTAuth.toCredential(token, identity, previous, issuedClientId)
+            ChatGPTAuth.toCredential(token, identity, previous, issuedClientId, registration)
         } finally {
             withContext(NonCancellable) { session.close() }
         }

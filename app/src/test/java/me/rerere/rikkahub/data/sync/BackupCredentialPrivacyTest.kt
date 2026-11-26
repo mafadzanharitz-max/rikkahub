@@ -17,6 +17,12 @@ class BackupCredentialPrivacyTest {
             providers = listOf(
                 ProviderSetting.ChatGPT(
                     name = "My ChatGPT",
+                    registration = me.rerere.ai.provider.ChatGPTRegistration(
+                        clientId = "oaiapp-registration-secret",
+                        issuer = "https://auth.openai.com",
+                        subject = "siwc-subject-secret",
+                        email = "user@example.com",
+                    ),
                     credential = OAuthCredential(
                         accessToken = "siwc-access-secret",
                         refreshToken = "siwc-refresh-secret",
@@ -35,6 +41,10 @@ class BackupCredentialPrivacyTest {
 
         assertEquals("My ChatGPT", chatGpt.name)
         assertNull(chatGpt.credential)
+        assertNull(chatGpt.registration)
+        assertNull(chatGpt.registration)
+        assertFalse(serialized.contains("oaiapp-registration-secret"))
+        assertFalse(serialized.contains("siwc-subject-secret"))
         assertFalse(serialized.contains("siwc-access-secret"))
         assertFalse(serialized.contains("siwc-refresh-secret"))
         assertFalse(serialized.contains("workspace-id"))

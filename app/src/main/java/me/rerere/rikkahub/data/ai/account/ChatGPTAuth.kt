@@ -11,6 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import me.rerere.ai.provider.ChatGPTRegistration
 import me.rerere.ai.provider.OAuthCredential
 import me.rerere.oauth.OAuthHttpClient
 import me.rerere.common.http.await
@@ -68,6 +69,7 @@ internal object ChatGPTAuth {
         clientId: String,
         hostId: String,
         previous: OAuthCredential?,
+        registration: ChatGPTRegistration? = null,
     ) = OAuthHttpClient.AuthorizationRequest(
         authorizationEndpoint = AUTHORIZATION_ENDPOINT,
         clientId = clientId,
@@ -79,10 +81,10 @@ internal object ChatGPTAuth {
         resources = listOf(RESOURCE),
         additionalParameters = buildMap {
             put("ext_agent_host_id", hostId)
-            if (previous?.oauthClientId == null) put("agent_name_hint", AGENT_NAME)
+            if (registration == null) put("agent_name_hint", AGENT_NAME)
             else {
-                previous.idTokenHint?.let { put("id_token_hint", it) }
-                previous.email?.let { put("login_hint", it) }
+                previous?.idTokenHint?.let { put("id_token_hint", it) }
+                (registration.email ?: previous?.email)?.let { put("login_hint", it) }
             }
         },
     )
@@ -163,12 +165,16 @@ internal object ChatGPTAuth {
         identity: VerifiedIdentity,
         previous: OAuthCredential?,
         clientId: String,
+        registration: ChatGPTRegistration? = null,
         now: Long = System.currentTimeMillis(),
     ): OAuthCredential {
         val scopes = token.scope?.split(Regex("\\s+"))?.filter { it.isNotBlank() }?.distinct().orEmpty()
         require(REQUIRED_SCOPE in scopes) { "ChatGPT did not grant $REQUIRED_SCOPE" }
         require(previous?.subject == null || previous.subject == identity.subject) {
             "The authorized ChatGPT account does not match the selected registration"
+        }
+        require(registration?.subject == null || registration.subject == identity.subject) {
+            "The authorized ChatGPT account does not match the saved registration"
         }
         require(previous?.oauthClientId == null || previous.oauthClientId == clientId) {
             "The SIWC client registration does not match the selected account"

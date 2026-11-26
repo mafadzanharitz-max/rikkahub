@@ -19,10 +19,10 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Codex 后端的流式响应不带 Content-Type，回放真实响应验证能正常解析 */
-class CodexEventStreamTest {
-    // 摘自真实的 /backend-api/codex/responses 响应（省略了 response 对象里的 tools）
-    private val codexStream = """
+/** Responses API 的流式响应事件可被公共 SSE decoder 解析 */
+class OpenAIResponsesEventStreamTest {
+    // Responses API SSE fixture（省略了 response 对象里的 tools）
+    private val responsesStream = """
         event: response.created
         data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-6.1-sol","output":[]}}
 
@@ -57,7 +57,7 @@ class CodexEventStreamTest {
     """.trimIndent()
 
     // 假后端：和真实响应一样，200 但没有 Content-Type
-    private val codexBackend = Interceptor { chain ->
+    private val responsesBackend = Interceptor { chain ->
         Response.Builder()
             .request(chain.request())
             .protocol(Protocol.HTTP_2)
@@ -85,7 +85,7 @@ class CodexEventStreamTest {
         }
 
         client.newEventSource(
-            Request.Builder().url("$CODEX_BASE_URL/responses").build(),
+            Request.Builder().url("https://api.openai.com/v1/responses").build(),
             object : EventSourceListener() {
                 override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
                     collect(decoder.accept(SseEvent(id = id, event = type, data = data)).chunks)
@@ -107,7 +107,7 @@ class CodexEventStreamTest {
     }
 
     @Test
-    fun `codex stream without content type is parsed`() {
+    fun `Responses stream without content type is parsed`() {
         val client = OkHttpClient.Builder().addInterceptor(codexBackend).build()
 
         val result = stream(client)

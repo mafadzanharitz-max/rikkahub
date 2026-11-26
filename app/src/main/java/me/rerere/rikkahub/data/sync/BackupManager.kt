@@ -139,7 +139,7 @@ internal class LimitedBackupOutputStream(
  */
 internal fun Settings.withoutChatGPTCredentialsForPortableTransfer(): Settings =
     copy(providers = providers.map { provider ->
-        if (provider is ProviderSetting.ChatGPT) provider.copy(credential = null) else provider
+        if (provider is ProviderSetting.ChatGPT) provider.copy(credential = null, registration = null) else provider
     })
 
 /** Shared archive format and restore lifecycle for local, WebDAV and S3 backups. */

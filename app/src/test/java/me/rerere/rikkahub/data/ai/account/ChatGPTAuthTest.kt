@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.account
 
+import me.rerere.ai.provider.ChatGPTRegistration
 import me.rerere.ai.provider.OAuthCredential
 import me.rerere.oauth.OAuthHttpClient
 import org.junit.Assert.assertEquals
@@ -48,6 +49,12 @@ class ChatGPTAuthTest {
                 clientId = previous.oauthClientId!!,
                 hostId = "urn:uuid:123e4567-e89b-42d3-a456-426614174000",
                 previous = previous,
+                registration = ChatGPTRegistration(
+                    clientId = "oaiapp_issued",
+                    issuer = ChatGPTAuth.ISSUER,
+                    subject = "subject",
+                    email = "person@example.com",
+                ),
             )
         )
         assertTrue(url.contains("client_id=oaiapp_issued"))
