@@ -111,3 +111,17 @@ The current backup path serializes the in-memory `Settings` object after DataSto
 A code mitigation is being added at the backup serialization boundary: retain the ChatGPT provider configuration but remove its complete OAuth credential before serialization. Restoring such a backup leaves the ChatGPT provider present but signed out; the user must complete sign-in again on the restored device. This also prevents the retained ID token hint, access token, and refresh token from crossing the backup boundary. Existing backups already created are not retroactively changed and should be treated as sensitive.
 
 The per-host `ext_agent_host_id` must also remain host-local and must not be copied into portable backups when the SIWC host setting is introduced.
+
+## SIWC preview limitations that affect the existing feature surface
+
+The official preview-limitations guide adds a compatibility matrix that must be applied to the provider migration:
+
+- Every HTTP inference request must set `store: false` and `stream: true`, and send the complete required context in `input` on each request. The current `ResponseAPI` already streams and sends `store: false`; it also sends the full local history rather than relying on `previous_response_id`.
+- Omit unsupported request fields including `max_output_tokens`, `temperature`, `top_p`, `background`, `conversation`, `metadata`, `moderation`, `multi_agent`, `prompt`, `prompt_cache_retention`, `safety_identifier`, `top_logprobs`, `truncation`, and `user`.
+- The current shared `ResponseAPI` may add `max_output_tokens`, `temperature`, and `top_p` by default. A SIWC-specific capability profile must disable those fields. It must also remove Codex-only encrypted reasoning payload assumptions unless explicitly supported by the SIWC preview contract.
+- Supported tool behavior is narrower than the current provider's built-in tool surface. Function/custom tools are supported subject to the documented input contract; web search is subject to model and account/workspace policy.
+- Image generation, file search, Code Interpreter, native computer use, hosted MCP/connectors, and Responses `tool_search` are not supported by this SIWC preview. The current ChatGPT provider can emit an image-generation tool, so that capability must be disabled for SIWC rather than silently sent.
+- Do not rely on Codex-only request fields, undocumented session headers, or previous response IDs. Keep all conversation context needed for a turn in the submitted input.
+
+Official reference:
+- https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
