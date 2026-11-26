@@ -137,7 +137,7 @@ internal class LimitedBackupOutputStream(
  * never be serialized into them. The provider configuration remains available and the user
  * can sign in again after restoring the backup.
  */
-internal fun Settings.withoutChatGPTCredentialsForBackup(): Settings =
+internal fun Settings.withoutChatGPTCredentialsForPortableTransfer(): Settings =
     copy(providers = providers.map { provider ->
         if (provider is ProviderSetting.ChatGPT) provider.copy(credential = null) else provider
     })
@@ -165,7 +165,7 @@ class BackupManager(
             ).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
                 val settingsJson = json.encodeSettings(
-    settings.withoutChatGPTCredentialsForBackup(),
+    settings.withoutChatGPTCredentialsForPortableTransfer(),
     settingsStore.launchCountFlow.first(),
 )
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
@@ -296,7 +296,7 @@ class BackupManager(
                     val settingsFile = File(staging, "settings.json")
                     if (settingsFile.exists()) {
                         val migrated = SettingsJsonMigrator.migrate(settingsFile.readText())
-                        val settings = json.decodeFromString<Settings>(migrated)
+                        val settings = json.decodeFromString<Settings>(migrated).withoutChatGPTCredentialsForPortableTransfer()
                         require(!settings.init) { "Backup contains uninitialized settings" }
                         // Persist the migrated value once, including generated IDs, for restart/retry consistency.
                         PendingRestore.writeDurably(settingsFile, json.encodeSettings(settings, json.launchCountOf(migrated)))

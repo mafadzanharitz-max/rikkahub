@@ -29,7 +29,7 @@ class BackupCredentialPrivacyTest {
             ),
         )
 
-        val backupSettings = settings.withoutChatGPTCredentialsForBackup()
+        val backupSettings = settings.withoutChatGPTCredentialsForPortableTransfer()
         val chatGpt = backupSettings.providers.single() as ProviderSetting.ChatGPT
         val serialized = JsonInstant.encodeToString(backupSettings)
 
@@ -46,7 +46,7 @@ class BackupCredentialPrivacyTest {
     fun `backup sanitization does not modify live settings`() {
         val credential = OAuthCredential(accessToken = "live-access", refreshToken = "live-refresh")
         val settings = Settings(providers = listOf(ProviderSetting.ChatGPT(credential = credential)))
-        val backupSettings = settings.withoutChatGPTCredentialsForBackup()
+        val backupSettings = settings.withoutChatGPTCredentialsForPortableTransfer()
 
         assertEquals(credential, (settings.providers.single() as ProviderSetting.ChatGPT).credential)
         assertNull((backupSettings.providers.single() as ProviderSetting.ChatGPT).credential)
