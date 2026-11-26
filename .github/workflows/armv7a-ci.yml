@@ -194,84 +194,13 @@ jobs:
               encoding="utf-8",
           )
           PY
-      - name: Compile, test, and build Debug plus optimized Release
+      - name: Run unit tests and build optimized Release only
         run: |
-          ./gradlew :app:assembleGithubDebug :app:testGithubDebugUnitTest \
+          ./gradlew :app:testGithubDebugUnitTest \
             :ai:testDebugUnitTest :common:testDebugUnitTest \
             :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
             :app:assembleGithubRelease \
             --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
-      - name: Validate actual ARMv7 ELF headers (Debug APK)
-        run: |
-          set -euo pipefail
-          APK="$(find app/build/outputs/apk/github/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
-          python3 scripts/ci/verify-armv7-elf.py "$APK"
-      - name: Verify APK ABI and required native components
-        run: |
-          python3 - <<'PY'
-          import pathlib, zipfile
-          apk = next(pathlib.Path("app/build/outputs/apk/github/debug").glob("*.apk"))
-          with zipfile.ZipFile(apk) as archive:
-              libs = [n for n in archive.namelist() if n.startswith("lib/") and n.endswith(".so")]
-              assert libs, "APK contains no native libraries"
-              wrong = [n for n in libs if not n.startswith("lib/armeabi-v7a/")]
-              assert not wrong, f"Unexpected ABI entries: {wrong}"
-              names = {pathlib.PurePosixPath(n).name for n in libs}
-              required = {"libsimple.so", "libtermux.so", "libworkspace.so",
-                          "libproot_exec.so", "libproot_loader.so",
-                          "libquickjs.so", "libsqlite3x.so"}
-              assert required <= names, f"Missing native components: {sorted(required - names)}"
-              print(f"Validated {len(libs)} ARMv7 ELF libraries in {apk}")
-          PY
-      - name: Report APK size breakdown
-        run: |
-          python3 - <<'PY'
-          import pathlib, zipfile
-          apk = next(pathlib.Path("app/build/outputs/apk/github/debug").glob("*.apk"))
-          groups = {"DEX": [], "Native": [], "Resources": [], "Assets": [], "Other": []}
-          with zipfile.ZipFile(apk) as archive:
-              entries = [(info.filename, info.file_size, info.compress_size)
-                         for info in archive.infolist() if not info.is_dir()]
-              for name, raw, packed in entries:
-                  if name.endswith(".dex"):
-                      group = "DEX"
-                  elif name.startswith("lib/") and name.endswith(".so"):
-                      group = "Native"
-                  elif name.startswith("res/") or name == "resources.arsc":
-                      group = "Resources"
-                  elif name.startswith("assets/"):
-                      group = "Assets"
-                  else:
-                      group = "Other"
-                  groups[group].append((name, raw, packed))
-              total_raw = sum(raw for _, raw, _ in entries)
-              total_packed = sum(packed for _, _, packed in entries)
-              lines = [
-                  "## APK size audit",
-                  f"- APK file: **{apk.stat().st_size / 1024 / 1024:.2f} MiB**",
-                  f"- ZIP entries: **{len(entries)}**",
-                  "",
-                  "| Group | Uncompressed | Compressed |",
-                  "|---|---:|---:|",
-              ]
-              for group, items in groups.items():
-                  raw = sum(x[1] for x in items)
-                  packed = sum(x[2] for x in items)
-                  lines.append(f"| {group} | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
-              lines += ["", "### 15 largest uncompressed entries", "| Entry | Uncompressed | Compressed |", "|---|---:|---:|"]
-              for name, raw, packed in sorted(entries, key=lambda x: x[1], reverse=True)[:15]:
-                  lines.append(f"| `{name}` | {raw / 1024 / 1024:.2f} MiB | {packed / 1024 / 1024:.2f} MiB |")
-              pathlib.Path("/tmp/apk-audit-summary.md").write_text("\n".join(lines) + "\n")
-              print("\n".join(lines))
-          PY
-          cat /tmp/apk-audit-summary.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: RikkaHub-3.3.0-ARMv7a-debug
-          path: app/build/outputs/apk/github/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
       - name: Validate actual ARMv7 ELF headers (Release APK)
         run: |
           set -euo pipefail
