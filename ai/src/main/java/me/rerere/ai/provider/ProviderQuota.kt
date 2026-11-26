@@ -66,5 +66,6 @@ enum class QuotaQueryMethod {
 val ProviderSetting.supportsQuota: Boolean
     get() = when (this) {
         is ProviderSetting.ApiKey -> quotaQuery.enabled
+        is ProviderSetting.ChatGPT -> false
         is ProviderSetting.Account -> credential != null
     }

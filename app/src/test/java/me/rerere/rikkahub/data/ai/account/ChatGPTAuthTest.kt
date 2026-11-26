@@ -1,190 +1,113 @@
 package me.rerere.rikkahub.data.ai.account
 
 import me.rerere.ai.provider.OAuthCredential
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.oauth.OAuthHttpClient
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.Base64
 
 class ChatGPTAuthTest {
-    private fun jwt(payload: String): String {
-        val encoder = Base64.getUrlEncoder().withoutPadding()
-        return listOf("""{"alg":"none"}""", payload, "signature")
-            .joinToString(".") { encoder.encodeToString(it.toByteArray()) }
-    }
-
-    private val idToken = jwt(
-        """
-        {
-          "email": "user@example.com",
-          "https://api.openai.com/auth": {
-            "chatgpt_account_id": "account-1",
-            "chatgpt_plan_type": "plus"
-          }
-        }
-        """.trimIndent()
-    )
-    private val accessToken = jwt("""{"exp": 1700000000}""")
-
     @Test
-    fun `login token is converted with account info from id token`() {
-        val credential = ChatGPTAuth.toCredential(
-            token = OAuthHttpClient.TokenResponse(
-                accessToken = accessToken,
-                refreshToken = "refresh-1",
-                idToken = idToken,
-            ),
+    fun `new registration uses dynamic client and SIWC authorization contract`() {
+        val oauth = OAuthHttpClient(okhttp3.OkHttpClient())
+        val request = ChatGPTAuth.authorizationRequest(
+            pkce = OAuthHttpClient.Pkce("verifier", "challenge"),
+            state = "state",
+            nonce = "nonce",
+            redirectUri = "http://127.0.0.1:1455/auth/callback",
+            clientId = ChatGPTAuth.DYNAMIC_CLIENT_ID,
+            hostId = "urn:uuid:123e4567-e89b-42d3-a456-426614174000",
             previous = null,
         )
-
-        assertEquals(accessToken, credential.accessToken)
-        assertEquals("refresh-1", credential.refreshToken)
-        // 没有 expires_in 时取 access token 的 exp
-        assertEquals(1_700_000_000_000L, credential.expiresAt)
-        assertEquals("account-1", credential.accountId)
-        assertEquals("user@example.com", credential.email)
-        assertEquals("plus", credential.plan)
+        val url = oauth.buildAuthorizationUrl(request)
+        assertTrue(url.startsWith("https://auth.openai.com/api/accounts/authorize?"))
+        assertTrue(url.contains("client_id=dynamic_agent_client"))
+        assertTrue(url.contains("agent_name_hint=RikkaHub%20ARMv7"))
+        assertTrue(url.contains("ext_agent_host_id=urn%3Auuid%3A"))
+        assertTrue(url.contains("nonce=nonce"))
+        assertTrue(url.contains("chatgpt.tokens.use.direct"))
+        assertFalse(url.contains("codex_cli"))
     }
 
     @Test
-    fun `expires_in takes precedence over jwt exp`() {
-        val credential = ChatGPTAuth.toCredential(
-            token = OAuthHttpClient.TokenResponse(accessToken = accessToken, expiresIn = 3600),
-            previous = null,
-            now = 1_000L,
-        )
-
-        assertEquals(1_000L + 3_600_000L, credential.expiresAt)
-    }
-
-    @Test
-    fun `refresh without id token or refresh token keeps previous values`() {
+    fun `returning registration reuses issued client and sends identity hints`() {
+        val oauth = OAuthHttpClient(okhttp3.OkHttpClient())
         val previous = OAuthCredential(
-            accessToken = "old-access",
-            refreshToken = "old-refresh",
-            accountId = "account-1",
-            email = "user@example.com",
-            plan = "pro",
+            accessToken = "access",
+            oauthClientId = "oaiapp_issued",
+            email = "person@example.com",
+            idTokenHint = "signed-id-token",
         )
-
-        val credential = ChatGPTAuth.toCredential(
-            token = OAuthHttpClient.TokenResponse(accessToken = "opaque-access"),
-            previous = previous,
-        )
-
-        assertEquals("opaque-access", credential.accessToken)
-        assertEquals("old-refresh", credential.refreshToken)
-        assertEquals(0L, credential.expiresAt)
-        assertEquals("account-1", credential.accountId)
-        assertEquals("user@example.com", credential.email)
-        assertEquals("pro", credential.plan)
-    }
-
-    @Test
-    fun `plan display names follow codex`() {
-        assertEquals("Plus", ChatGPTAuth.planDisplayName("plus"))
-        assertEquals("Pro", ChatGPTAuth.planDisplayName("prolite"))
-        assertEquals("Pro (More)", ChatGPTAuth.planDisplayName("pro"))
-        assertEquals("Pro (Max)", ChatGPTAuth.planDisplayName("PROMAX"))
-        assertEquals("Enterprise", ChatGPTAuth.planDisplayName("hc"))
-        assertEquals("Edu", ChatGPTAuth.planDisplayName("education"))
-        assertEquals("Self Serve Business Usage Based", ChatGPTAuth.planDisplayName("self_serve_business_usage_based"))
-        // 不认识的值按单词首字母大写
-        assertEquals("Free Workspace", ChatGPTAuth.planDisplayName("free_workspace"))
-    }
-
-    @Test
-    fun `malformed jwt yields null payload`() {
-        assertNull(decodeJwtPayload("not-a-jwt"))
-        assertNull(decodeJwtPayload("a.!!!.c"))
-    }
-
-    @Test
-    fun `refresh request uses json encoding`() {
-        val request = ChatGPTAuth.refreshRequest("refresh-1")
-
-        assertEquals(OAuthHttpClient.TokenEncoding.JSON, request.encoding)
-        assertEquals(ChatGPTAuth.CLIENT_ID, request.clientId)
-        assertEquals(ChatGPTAuth.TOKEN_ENDPOINT, request.tokenEndpoint)
-    }
-
-    @Test
-    fun `authorization url matches codex cli parameters`() {
-        val client = OAuthHttpClient(okhttp3.OkHttpClient())
-        val url = client.buildAuthorizationUrl(
+        val url = oauth.buildAuthorizationUrl(
             ChatGPTAuth.authorizationRequest(
-                pkce = OAuthHttpClient.Pkce(verifier = "v", challenge = "c"),
+                pkce = OAuthHttpClient.Pkce("v", "c"),
                 state = "s",
+                nonce = "n",
                 redirectUri = "http://127.0.0.1:1455/auth/callback",
+                clientId = previous.oauthClientId!!,
+                hostId = "urn:uuid:123e4567-e89b-42d3-a456-426614174000",
+                previous = previous,
             )
         )
-
-        assertEquals(
-            "https://auth.openai.com/oauth/authorize?response_type=code" +
-                "&client_id=app_EMoamEEZ73f0CkXaXp7hrann" +
-                "&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback" +
-                "&code_challenge=c&code_challenge_method=S256&state=s" +
-                "&scope=openid%20profile%20email%20offline_access" +
-                "&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=codex_cli_rs",
-            url,
-        )
+        assertTrue(url.contains("client_id=oaiapp_issued"))
+        assertTrue(url.contains("id_token_hint=signed-id-token"))
+        assertTrue(url.contains("login_hint=person%40example.com"))
+        assertFalse(url.contains("agent_name_hint"))
     }
 
     @Test
-    fun `ui edits keep the stored credential`() {
-        val stored = ProviderSetting.ChatGPT(credential = OAuthCredential(accessToken = "rotated"))
-        val edited = stored.copy(name = "Renamed", credential = OAuthCredential(accessToken = "stale"))
-
-        val merged = edited.preserveCredential(stored) as ProviderSetting.ChatGPT
-
-        assertEquals("Renamed", merged.name)
-        assertEquals("rotated", merged.credential?.accessToken)
+    fun `refresh request uses form encoding issued client and resource without scope`() {
+        val request = ChatGPTAuth.refreshRequest("refresh", "oaiapp_issued")
+        assertEquals(OAuthHttpClient.TokenEncoding.FORM, request.encoding)
+        assertEquals("oaiapp_issued", request.clientId)
+        assertEquals(ChatGPTAuth.TOKEN_ENDPOINT, request.tokenEndpoint)
+        assertEquals(listOf(ChatGPTAuth.RESOURCE), request.resources)
+        assertEquals(null, request.scope)
     }
 
     @Test
-    fun `legacy credential JSON remains readable with SIWC fields defaulted`() {
-        val legacy = kotlinx.serialization.json.Json.decodeFromString<OAuthCredential>(
-            """{"accessToken":"legacy-access","refreshToken":"legacy-refresh"}"""
-        )
-
-        assertEquals("legacy-access", legacy.accessToken)
-        assertNull(legacy.oauthClientId)
-        assertNull(legacy.issuer)
-        assertNull(legacy.subject)
-        assertNull(legacy.idTokenHint)
-        assertEquals(emptyList<String>(), legacy.grantedScopes)
-    }
-
-    @Test
-    fun `SIWC registration metadata survives credential serialization`() {
-        val credential = OAuthCredential(
+    fun `credential creation requires granted plan use scope and binds identity`() {
+        val token = OAuthHttpClient.TokenResponse(
             accessToken = "access",
             refreshToken = "refresh",
-            oauthClientId = "oaiapp_issued-client",
-            issuer = "https://auth.openai.com",
-            subject = "verified-subject",
-            idTokenHint = "retained-id-token",
-            grantedScopes = listOf("openid", "profile", "chatgpt.tokens.use.direct"),
+            idToken = "id-token",
+            expiresIn = 3600,
+            scope = "openid profile offline_access resource.invoke chatgpt.tokens.use.direct",
         )
-        val json = kotlinx.serialization.json.Json.encodeToString(credential)
-        val restored = kotlinx.serialization.json.Json.decodeFromString<OAuthCredential>(json)
-
-        assertEquals(credential.oauthClientId, restored.oauthClientId)
-        assertEquals(credential.issuer, restored.issuer)
-        assertEquals(credential.subject, restored.subject)
-        assertEquals(credential.idTokenHint, restored.idTokenHint)
-        assertEquals(credential.grantedScopes, restored.grantedScopes)
+        val identity = ChatGPTAuth.VerifiedIdentity("subject-1", "person@example.com", "id-token")
+        val credential = ChatGPTAuth.toCredential(token, identity, null, "oaiapp_issued", now = 1000L)
+        assertEquals("oaiapp_issued", credential.oauthClientId)
+        assertEquals("subject-1", credential.subject)
+        assertEquals("https://auth.openai.com", credential.issuer)
+        assertEquals(3_601_000L, credential.expiresAt)
+        assertTrue("chatgpt.tokens.use.direct" in credential.grantedScopes)
     }
 
-    @Test
-    fun `preserveCredential leaves api key providers untouched`() {
-        val provider = ProviderSetting.OpenAI(apiKey = "key")
+    @Test(expected = IllegalArgumentException::class)
+    fun `credential creation rejects missing plan use scope`() {
+        ChatGPTAuth.toCredential(
+            OAuthHttpClient.TokenResponse(accessToken = "access", scope = "openid profile"),
+            ChatGPTAuth.VerifiedIdentity("subject", null, "id"),
+            null,
+            "oaiapp_issued",
+        )
+    }
 
-        assertSame(provider, provider.preserveCredential(ProviderSetting.OpenAI()))
+    @Test(expected = IllegalArgumentException::class)
+    fun `credential creation rejects account subject switch`() {
+        ChatGPTAuth.toCredential(
+            OAuthHttpClient.TokenResponse(
+                accessToken = "access",
+                scope = "chatgpt.tokens.use.direct",
+            ),
+            ChatGPTAuth.VerifiedIdentity("new-subject", null, "id"),
+            OAuthCredential(
+                accessToken = "old",
+                oauthClientId = "oaiapp_issued",
+                subject = "old-subject",
+            ),
+            "oaiapp_issued",
+        )
     }
 }

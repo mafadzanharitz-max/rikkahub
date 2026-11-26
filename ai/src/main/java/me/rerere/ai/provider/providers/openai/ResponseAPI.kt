@@ -252,7 +252,7 @@ class ResponseAPI(
                         put("content", systemPrompt)
                     })
                 }
-                buildMessages(messages).forEach { add(it) }
+                buildMessages(messages, capabilities.supportEncryptedContent).forEach { add(it) }
             }
 
             // reasoning
@@ -273,7 +273,9 @@ class ResponseAPI(
                 })
             }
             // 会话 ID 作为 prompt_cache_key，同一会话的请求能命中提示缓存
-            params.sessionId?.let { put("prompt_cache_key", it) }
+            if (capabilities.supportsPromptCacheKey) {
+                params.sessionId?.let { put("prompt_cache_key", it) }
+            }
 
             // tools
             // Response API 的 tools 是扁平数组, 函数工具和内置工具可以共存, 必须写在同一个 key 下,
@@ -312,19 +314,19 @@ class ResponseAPI(
                             BuiltInTools.UrlContext -> {} // not supported
 
                             BuiltInTools.ImageGeneration -> {
-                                add(buildJsonObject {
-                                    put("type", "image_generation")
-                                    put("model", "gpt-image-2.5-sunburst")
-                                })
+                                // Unsupported by this provider capability profile.
                             }
                         }
                     }
                 }
             }
-        }.mergeCustomBody(params.customBody)
+        }.let { body -> if (capabilities.supportsCustomBody) body.mergeCustomBody(params.customBody) else body }
     }
 
-    internal fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    internal fun buildMessages(
+        messages: List<UIMessage>,
+        includeEncryptedReasoning: Boolean = true,
+    ) = buildJsonArray {
         messages
             .filter { message ->
                 message.role != MessageRole.SYSTEM && (
@@ -336,14 +338,17 @@ class ResponseAPI(
             }
             .forEach { message ->
                 if (message.role == MessageRole.ASSISTANT) {
-                    addAssistantItems(message)
+                    addAssistantItems(message, includeEncryptedReasoning)
                 } else {
                     addUserItems(message)
                 }
             }
     }
 
-    private fun JsonArrayBuilder.addAssistantItems(message: UIMessage) {
+    private fun JsonArrayBuilder.addAssistantItems(
+        message: UIMessage,
+        includeEncryptedReasoning: Boolean,
+    ) {
         val groups = groupPartsByToolBoundary(message.parts)
         val contentBuffer = mutableListOf<UIMessagePart>()
 
@@ -355,6 +360,9 @@ class ResponseAPI(
                         when (part) {
                             is UIMessagePart.Reasoning -> {
                                 val reasoningMetadata = part.metadataAs<OpenAIReasoningMetadata>()
+                                if (!includeEncryptedReasoning && reasoningMetadata?.encryptedContent != null) {
+                                    return@forEach
+                                }
                                 val reasoningId = reasoningMetadata?.reasoningId
                                 if (reasoningId != null && !emittedReasoningIds.add(reasoningId)) {
                                     return@forEach
@@ -499,6 +507,7 @@ class ResponseAPI(
         val protocol = metadata?.protocol
         if (protocol != null && protocol != ServerToolProtocol.OPENAI_RESPONSES) return
 
+        if (tool.toolName.removeSuffix("_call") != "web_search") return
         val rawCall = metadata?.call.takeIf { protocol == ServerToolProtocol.OPENAI_RESPONSES }
         if (rawCall != null) {
             add(rawCall)
@@ -769,6 +778,8 @@ internal data class ResponseProviderCapabilities(
     val systemMessageRole: String? = null,
     // 是否接受 temperature、top_p 和 max_output_tokens
     val supportsSamplingParams: Boolean = true,
+    val supportsCustomBody: Boolean = true,
+    val supportsPromptCacheKey: Boolean = true,
     // 非推理模型也请求加密推理内容：不保存会话时，自带推理的模型要靠它接上多轮推理
     val alwaysIncludeEncryptedContent: Boolean = false,
     // 推理档位对应的 reasoning.effort（参数依次是档位、模型 id），返回 null 时不带

@@ -51,18 +51,40 @@ class ProviderAccountManagerTest {
     private val release = CountDownLatch(1)
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
-            requestArrived.countDown()
-            release.await(10, TimeUnit.SECONDS)
-            Response.Builder()
-                .request(chain.request())
-                .protocol(Protocol.HTTP_1_1)
-                .code(200)
-                .message("")
-                .body(
-                    """{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}"""
-                        .toResponseBody("application/json".toMediaType())
-                )
-                .build()
+            val request = chain.request()
+            if (request.url.encodedPath.endsWith("/.well-known/openid-configuration")) {
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("")
+                    .body(
+                        """{"issuer":"https://auth.openai.com","revocation_endpoint":"https://auth.openai.com/revoke"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            } else if (request.url.encodedPath == "/revoke") {
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("")
+                    .body("".toResponseBody("application/json".toMediaType()))
+                    .build()
+            } else {
+                requestArrived.countDown()
+                release.await(10, TimeUnit.SECONDS)
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("")
+                    .body(
+                        """{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600,"scope":"chatgpt.tokens.use.direct"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
         }
         .build()
 
@@ -86,6 +108,8 @@ class ProviderAccountManagerTest {
             refreshToken = "old-refresh",
             expiresAt = 1L, // 早已过期，一取凭据就会刷新
             accountId = "account",
+            oauthClientId = "oaiapp_issued",
+            grantedScopes = listOf("chatgpt.tokens.use.direct"),
         ),
     )
 

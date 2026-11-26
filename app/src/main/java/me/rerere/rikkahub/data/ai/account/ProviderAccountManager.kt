@@ -81,7 +81,7 @@ class ProviderAccountManager(
             val job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                 try {
                     val credential = when (provider) {
-                        is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext)
+                        is ProviderSetting.ChatGPT -> loginChatGPT(provider, context.applicationContext)
                         is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext)
                     }
                     persistLoginCredential(provider, attempt, credential)
@@ -113,6 +113,15 @@ class ProviderAccountManager(
     }
 
     suspend fun logout(providerId: Uuid) {
+        val credential = (findAccount(providerId) as? ProviderSetting.ChatGPT)?.credential
+        val refreshToken = credential?.refreshToken
+        val clientId = credential?.oauthClientId
+        if (refreshToken != null && clientId != null) {
+            val revoked = runCatching {
+                ChatGPTAuth.revokeRefreshToken(client, refreshToken, clientId)
+            }.getOrDefault(false)
+            if (!revoked) Log.w(TAG, "ChatGPT remote session revocation was not confirmed")
+        }
         // Serialize the generation check with login creation while the settings transform
         // is applied. A new login that starts after logout was requested must not have its
         // freshly persisted credential erased by this older logout operation.
@@ -175,8 +184,13 @@ class ProviderAccountManager(
                 ?: error("${latest.name}: session expired, please sign in again")
             val refreshed = try {
                 when (latest) {
-                    is ProviderSetting.ChatGPT -> ChatGPTAuth.toCredential(
-                        token = oauthClient.refreshToken(ChatGPTAuth.refreshRequest(refreshToken)),
+                    is ProviderSetting.ChatGPT -> ChatGPTAuth.refreshedCredential(
+                        token = oauthClient.refreshToken(
+                            ChatGPTAuth.refreshRequest(
+                                refreshToken,
+                                credential.oauthClientId ?: error("Missing SIWC client registration"),
+                            )
+                        ),
                         previous = credential,
                     )
 
@@ -201,42 +215,68 @@ class ProviderAccountManager(
         }
     }
 
-    private suspend fun loginChatGPT(context: Context): OAuthCredential =
-        withContext(Dispatchers.IO) {
-            val pkce = oauthClient.generatePkce()
-            val state = oauthClient.generateState()
-            val session = chatGPTCallbackServer.openSession(context, state)
-            try {
-                val authorizationUrl = oauthClient.buildAuthorizationUrl(
-                    ChatGPTAuth.authorizationRequest(
-                        pkce = pkce,
-                        state = state,
-                        redirectUri = session.redirectUri
-                    )
+    private suspend fun loginChatGPT(
+        provider: ProviderSetting.ChatGPT,
+        context: Context,
+    ): OAuthCredential = withContext(Dispatchers.IO) {
+        val previous = provider.credential
+        val returningRegistration = previous?.oauthClientId != null
+        val clientId = if (returningRegistration) previous!!.oauthClientId!! else ChatGPTAuth.DYNAMIC_CLIENT_ID
+        val pkce = oauthClient.generatePkce()
+        val state = oauthClient.generateState()
+        val nonce = oauthClient.generateNonce()
+        val hostId = ChatGPTAuth.getOrCreateHostId(context)
+        val session = chatGPTCallbackServer.openSession(context, state)
+        try {
+            val authorizationUrl = oauthClient.buildAuthorizationUrl(
+                ChatGPTAuth.authorizationRequest(
+                    pkce = pkce,
+                    state = state,
+                    nonce = nonce,
+                    redirectUri = session.redirectUri,
+                    clientId = clientId,
+                    hostId = hostId,
+                    previous = previous,
                 )
-                withContext(Dispatchers.Main) {
-                    CustomTabsOAuthAuthorizationLauncher.launch(context, authorizationUrl)
-                }
-                val callback =
-                    session.awaitCallback(AUTHORIZATION_TIMEOUT) ?: error("Authorization timed out")
-                callback.error?.let { code ->
-                    error(listOfNotNull(code, callback.errorDescription).joinToString(": "))
-                }
-                val code = callback.code ?: error("No authorization code returned")
-                val token = oauthClient.exchangeAuthorizationCode(
-                    OAuthHttpClient.AuthorizationCodeTokenRequest(
-                        tokenEndpoint = ChatGPTAuth.TOKEN_ENDPOINT,
-                        clientId = ChatGPTAuth.CLIENT_ID,
-                        code = code,
-                        codeVerifier = pkce.verifier,
-                        redirectUri = session.redirectUri,
-                    )
-                )
-                ChatGPTAuth.toCredential(token, previous = null)
-            } finally {
-                withContext(NonCancellable) { session.close() }
+            )
+            withContext(Dispatchers.Main) {
+                CustomTabsOAuthAuthorizationLauncher.launch(context, authorizationUrl)
             }
+            val callback = session.awaitCallback(AUTHORIZATION_TIMEOUT)
+                ?: error("Authorization timed out")
+            callback.error?.let { code ->
+                error(listOfNotNull(code, callback.errorDescription).joinToString(": "))
+            }
+            require(callback.issuer == null || callback.issuer == ChatGPTAuth.ISSUER) {
+                "Authorization callback issuer mismatch"
+            }
+            val issuedClientId = if (returningRegistration) {
+                require(callback.clientId == null || callback.clientId == clientId) {
+                    "Authorization callback changed the saved SIWC client registration"
+                }
+                clientId
+            } else {
+                callback.clientId?.takeIf { it.isNotBlank() }
+                    ?: error("SIWC registration callback did not return an issued client ID")
+            }
+            val code = callback.code ?: error("No authorization code returned")
+            val token = oauthClient.exchangeAuthorizationCode(
+                OAuthHttpClient.AuthorizationCodeTokenRequest(
+                    tokenEndpoint = ChatGPTAuth.TOKEN_ENDPOINT,
+                    clientId = issuedClientId,
+                    code = code,
+                    codeVerifier = pkce.verifier,
+                    redirectUri = session.redirectUri,
+                    resources = listOf(ChatGPTAuth.RESOURCE),
+                )
+            )
+            val idToken = token.idToken ?: error("SIWC token response did not include an ID token")
+            val identity = ChatGPTAuth.verifyIdToken(client, idToken, issuedClientId, nonce)
+            ChatGPTAuth.toCredential(token, identity, previous, issuedClientId)
+        } finally {
+            withContext(NonCancellable) { session.close() }
         }
+    }
 
     // 登录由 appScope（主线程）发起，网络请求和读响应体都放到 IO
     private suspend fun loginGrok(providerId: Uuid, context: Context): OAuthCredential =
