@@ -18,6 +18,14 @@ data class OAuthCredential(
     // 以下仅用于界面展示
     val email: String? = null,
     val plan: String? = null,
+    // SIWC registration and verified OIDC identity metadata. Defaults preserve legacy settings.
+    val oauthClientId: String? = null,
+    val issuer: String? = null,
+    val subject: String? = null,
+    // Retained only to send as id_token_hint during reauthorization; never trust it without verification.
+    val idTokenHint: String? = null,
+    // Exact scopes granted by the authorization server, not merely those requested.
+    val grantedScopes: List<String> = emptyList(),
 ) {
     override fun toString(): String =
         "OAuthCredential(accessToken=${accessToken.masked()}, refreshToken=${refreshToken?.masked()}, " +

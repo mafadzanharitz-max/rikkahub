@@ -145,6 +145,41 @@ class ChatGPTAuthTest {
     }
 
     @Test
+    fun `legacy credential JSON remains readable with SIWC fields defaulted`() {
+        val legacy = kotlinx.serialization.json.Json.decodeFromString<OAuthCredential>(
+            """{"accessToken":"legacy-access","refreshToken":"legacy-refresh"}"""
+        )
+
+        assertEquals("legacy-access", legacy.accessToken)
+        assertNull(legacy.oauthClientId)
+        assertNull(legacy.issuer)
+        assertNull(legacy.subject)
+        assertNull(legacy.idTokenHint)
+        assertEquals(emptyList<String>(), legacy.grantedScopes)
+    }
+
+    @Test
+    fun `SIWC registration metadata survives credential serialization`() {
+        val credential = OAuthCredential(
+            accessToken = "access",
+            refreshToken = "refresh",
+            oauthClientId = "oaiapp_issued-client",
+            issuer = "https://auth.openai.com",
+            subject = "verified-subject",
+            idTokenHint = "retained-id-token",
+            grantedScopes = listOf("openid", "profile", "chatgpt.tokens.use.direct"),
+        )
+        val json = kotlinx.serialization.json.Json.encodeToString(credential)
+        val restored = kotlinx.serialization.json.Json.decodeFromString<OAuthCredential>(json)
+
+        assertEquals(credential.oauthClientId, restored.oauthClientId)
+        assertEquals(credential.issuer, restored.issuer)
+        assertEquals(credential.subject, restored.subject)
+        assertEquals(credential.idTokenHint, restored.idTokenHint)
+        assertEquals(credential.grantedScopes, restored.grantedScopes)
+    }
+
+    @Test
     fun `preserveCredential leaves api key providers untouched`() {
         val provider = ProviderSetting.OpenAI(apiKey = "key")
 
