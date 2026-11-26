@@ -406,10 +406,12 @@ class ProviderAccountManager(
  * 编辑期间后台可能已经刷新过 token，旧凭据写回会把轮换后的 refresh token 覆盖掉。
  */
 fun ProviderSetting.preserveCredential(latest: ProviderSetting): ProviderSetting =
-    if (this is ProviderSetting.Account && latest is ProviderSetting.Account) {
-        withCredential(latest.credential)
-    } else {
-        this
+    when {
+        this is ProviderSetting.ChatGPT && latest is ProviderSetting.ChatGPT ->
+            copy(credential = latest.credential, registration = latest.registration)
+        this is ProviderSetting.Account && latest is ProviderSetting.Account ->
+            withCredential(latest.credential)
+        else -> this
     }
 
 

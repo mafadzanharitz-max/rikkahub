@@ -117,4 +117,20 @@ class ChatGPTAuthTest {
             "oaiapp_issued",
         )
     }
+    @Test
+    fun `stale UI edits preserve signed out registration metadata`() {
+        val registration = ChatGPTRegistration(
+            clientId = "oaiapp_issued",
+            issuer = ChatGPTAuth.ISSUER,
+            subject = "verified-subject",
+            email = "person@example.com",
+        )
+        val stored = ProviderSetting.ChatGPT(registration = registration)
+        val edited = stored.copy(name = "Renamed", registration = null)
+        val merged = edited.preserveCredential(stored) as ProviderSetting.ChatGPT
+
+        assertEquals("Renamed", merged.name)
+        assertEquals(registration, merged.registration)
+    }
+
 }

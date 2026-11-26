@@ -63,7 +63,7 @@ class OpenAIResponsesEventStreamTest {
             .protocol(Protocol.HTTP_2)
             .code(200)
             .message("")
-            .body(codexStream.toResponseBody(null))
+            .body(responsesStream.toResponseBody(null))
             .build()
     }
 
@@ -108,7 +108,7 @@ class OpenAIResponsesEventStreamTest {
 
     @Test
     fun `Responses stream without content type is parsed`() {
-        val client = OkHttpClient.Builder().addInterceptor(codexBackend).build()
+        val client = OkHttpClient.Builder().addInterceptor(responsesBackend).build()
 
         val result = stream(client)
 
