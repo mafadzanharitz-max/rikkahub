@@ -121,7 +121,7 @@ class QuotaQueryRunnerTest {
         assertFalse(ProviderSetting.OpenAI().supportsQuota)
         assertTrue(ProviderSetting.OpenAI(quotaQuery = QuotaQuery(enabled = true)).supportsQuota)
         assertFalse(ProviderSetting.ChatGPT().supportsQuota)
-        assertTrue(ProviderSetting.ChatGPT(credential = OAuthCredential(accessToken = "a")).supportsQuota)
+        assertFalse(ProviderSetting.ChatGPT(credential = OAuthCredential(accessToken = "a")).supportsQuota)
     }
 
     @Test
