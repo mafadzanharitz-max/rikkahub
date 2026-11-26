@@ -30,6 +30,23 @@ internal const val MCP_OAUTH_REDIRECT_URI =
 internal const val MCP_OAUTH_CLIENT_METADATA_URL = "https://rikkahub.github.io/oauth/client.json"
 private val OAUTH_CALLBACK_TIMEOUT = 5.minutes
 
+internal fun validateMcpOAuthResponseIssuer(
+    expectedIssuer: String,
+    responseIssuer: String?,
+    issuerParameterSupported: Boolean,
+) {
+    require(expectedIssuer.isNotBlank()) { "Expected OAuth issuer must not be blank" }
+    require(!issuerParameterSupported || !responseIssuer.isNullOrBlank()) {
+        "OAuth authorization response is missing its issuer"
+    }
+    if (responseIssuer != null) {
+        require(responseIssuer.isNotBlank() && responseIssuer == expectedIssuer) {
+            "OAuth authorization response issuer mismatch"
+        }
+    }
+}
+
+
 /**
  * 负责 MCP OAuth 的授权、令牌刷新与持久化。
  *
@@ -283,6 +300,11 @@ internal class McpOAuthCoordinator(
 
             val callback = callbackSession.awaitCallback(OAUTH_CALLBACK_TIMEOUT)
                 ?: error("OAuth 授权超时")
+            validateMcpOAuthResponseIssuer(
+                expectedIssuer = issuer,
+                responseIssuer = callback.issuer,
+                issuerParameterSupported = metadata.authorizationResponseIssParameterSupported,
+            )
             callback.error?.let { error(buildAuthorizationError(it, callback.errorDescription)) }
             val code = callback.code ?: error("授权失败: 未返回授权码")
 

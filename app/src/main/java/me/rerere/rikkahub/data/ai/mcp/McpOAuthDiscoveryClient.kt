@@ -138,6 +138,8 @@ internal class McpOAuthDiscoveryClient(
         @SerialName("scopes_supported") val scopesSupported: List<String>? = null,
         @SerialName("code_challenge_methods_supported") val codeChallengeMethodsSupported: List<String>? = null,
         @SerialName("client_id_metadata_document_supported") val clientIdMetadataDocumentSupported: Boolean = false,
+        @SerialName("authorization_response_iss_parameter_supported")
+        val authorizationResponseIssParameterSupported: Boolean = false,
     )
 
     /**
