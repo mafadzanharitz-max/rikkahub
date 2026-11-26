@@ -103,3 +103,11 @@ The SIWC work is larger than an OAuth-only change. Required sequence:
 8. Add deterministic tests for registration callback handling, account binding, JWKS signature/key rotation, claim validation, granted scopes, refresh rotation, revocation failures, model discovery, public Responses request shape, and prohibited legacy backend endpoint usage.
 
 Do not change the current login or provider transport in isolation. Preserve the existing user data while implementing and testing the complete replacement. The SIWC release gate remains **P0 / BLOCKED** until both the authentication protocol and the inference transport satisfy the official documentation and Terms.
+
+## Portable backup privacy mitigation
+
+The current backup path serializes the in-memory `Settings` object after DataStore decryption. The resulting `settings.json` therefore contains ChatGPT OAuth credential fields inside the password-encrypted archive. Since the same archive can be sent to remote WebDAV or S3 storage, this is not an acceptable persistence path for SIWC authentication tokens, even though the archive itself is encrypted.
+
+A code mitigation is being added at the backup serialization boundary: retain the ChatGPT provider configuration but remove its complete OAuth credential before serialization. Restoring such a backup leaves the ChatGPT provider present but signed out; the user must complete sign-in again on the restored device. This also prevents the retained ID token hint, access token, and refresh token from crossing the backup boundary. Existing backups already created are not retroactively changed and should be treated as sensitive.
+
+The per-host `ext_agent_host_id` must also remain host-local and must not be copied into portable backups when the SIWC host setting is introduced.

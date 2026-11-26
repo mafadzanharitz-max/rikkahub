@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.migration.SettingsJsonMigrator
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.AppDatabase
@@ -128,6 +129,19 @@ internal class LimitedBackupOutputStream(
     }
 }
 
+/**
+ * Remove SIWC credentials before settings enter a portable backup archive.
+ *
+ * SIWC authentication tokens must remain in local, user-controlled storage. Backup archives
+ * can be exported or uploaded to remote WebDAV/S3 destinations, so ChatGPT credentials must
+ * never be serialized into them. The provider configuration remains available and the user
+ * can sign in again after restoring the backup.
+ */
+internal fun Settings.withoutChatGPTCredentialsForBackup(): Settings =
+    copy(providers = providers.map { provider ->
+        if (provider is ProviderSetting.ChatGPT) provider.copy(credential = null) else provider
+    })
+
 /** Shared archive format and restore lifecycle for local, WebDAV and S3 backups. */
 class BackupManager(
     private val context: Context,
@@ -150,7 +164,7 @@ class BackupManager(
                 )
             ).use { zip ->
                 zip.putNextEntry(ZipEntry("settings.json"))
-                val settingsJson = json.encodeSettings(settings, settingsStore.launchCountFlow.first())
+                val settingsJson = json.encodeSettings(settings.withoutChatGPTCredentialsForBackup(), settingsStore.launchCountFlow.first())
                 zip.write(settingsJson.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
                 if (includeDatabase) {
