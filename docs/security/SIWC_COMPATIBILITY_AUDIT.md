@@ -2,7 +2,7 @@
 
 Status: **BLOCKED — current ChatGPT account OAuth is a legacy Codex-parameter reuse, not a verified SIWC implementation.**
 
-Audit basis: repository source at the audit commit and the public OpenAI Sign in with ChatGPT documentation reviewed on 2026-11-25.
+Audit basis: repository source at commit `aa9bac9779360dced1edc03a0a7f6c118492f899` and the public OpenAI Sign in with ChatGPT documentation and Terms reviewed on 2026-11-26.
 
 ## Current implementation
 
@@ -54,3 +54,52 @@ The adjacent account-login lifecycle now uses per-provider attempt generations. 
 - Persist verified subject, client registration, host ID, and granted scopes without mixing account registrations.
 - Implement revocation-aware sign-out and safe credential replacement.
 - Add deterministic tests for callback tampering, wrong issuer/audience/nonce, expired tokens, bad signatures, missing scopes, account switching, refresh rotation, and logout.
+
+
+## Additional P0 finding: the inference transport is not the SIWC transport
+
+A second, independent blocker was confirmed against the official SIWC Models and inference guide reviewed on 2026-11-26:
+
+- `ai/.../providers/chatgpt/ChatGPTProvider.kt` currently sends model discovery to `https://chatgpt.com/backend-api/codex/models`.
+- It sends inference to `https://chatgpt.com/backend-api/codex/responses`.
+- It queries subscription usage through `https://chatgpt.com/backend-api/wham/usage`.
+- It adds Codex-specific `ChatGPT-Account-ID`, `originator: codex_cli_rs`, and session headers, and uses Codex-specific Responses capabilities.
+- The official SIWC plan-usage guide instead requires model discovery from `https://api.openai.com/v1/models` and inference through `POST https://api.openai.com/v1/responses` with the SIWC access token as Bearer authorization. It explicitly says not to use ChatGPT `backend-api` endpoints. The request must set `store: false` and `stream: true`.
+- The current `/backend-api/wham/usage` quota endpoint is not part of the documented SIWC interface. Do not retain it as a fallback. Until a supported usage source is documented, account quota should be unavailable or link users to ChatGPT Settings → Usage.
+
+This means a correct SIWC token flow alone would still leave the ChatGPT provider using undocumented Codex backend APIs. SIWC migration must include the provider transport, model catalogue parser, quota behavior, and tests. The generic `ResponseAPI` already sets `store: false` and can stream; its default capabilities should be evaluated for the public Responses API rather than reusing `CODEX_CAPABILITIES`.
+
+Official reference:
+- https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+
+## SIWC Terms and user-control requirements
+
+The OpenAI SIWC Terms effective 2026-11-04 add explicit obligations that must be included in the release gate:
+
+- Use the actual app name consistently; do not impersonate OpenAI, another app, or another open-source project.
+- Authentication tokens must be obtained only through the supported flow and persisted locally under the user's control. Do not move persistent tokens to remote/managed storage, analytics, logs, support transcripts, or source control.
+- ChatGPT plan requests must originate from the user's local runtime (or a remote runtime only that same user controls), be for that authenticated user, and arise from their activity or background automation they expressly authorized.
+- Do not expose a general-purpose API for unrelated tools or requests. Do not charge users or require a paid app tier for using their plan through SIWC.
+- Do not enable or encourage creating multiple accounts, splitting usage, rotating accounts, pooling/transferring/reselling/sharing tokens, or using one user's subscription for another user's requests.
+
+The official open-source SIWC documentation supports keeping separate registration records where users have legitimate separate account/workspace registrations. That must not be presented as a way to evade plan limits or encourage account rotation. Any account-selection UI must preserve user control and the original account/client binding.
+
+References:
+- https://openai.com/policies/sign-in-with-chatgpt-terms/
+- https://developers.openai.com/siwc/token-sharing-open-source/sign-in
+- https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions
+
+## Updated migration sequence
+
+The SIWC work is larger than an OAuth-only change. Required sequence:
+
+1. Replace the legacy Codex OAuth authorization with the documented SIWC dynamic registration and reauthorization flow. Keep first-time registration separate from a saved issued client ID.
+2. Persist one stable host ID per local app host, plus each registration's issued client ID, validated subject/issuer, ID token hint, tokens, scopes, and expiry. Keep each registration's record independent and protected by local Android Keystore-backed encryption.
+3. Validate ID-token RS256 signature using the fixed OpenAI JWKS endpoint with key rotation handling; validate issuer, audience, expiry, nonce, subject, and any optional claims used.
+4. Require the token response's granted `chatgpt.tokens.use.direct` scope before enabling plan inference. A callback scope is not authoritative for this decision.
+5. Replace Codex `backend-api` model discovery and inference with the documented public `api.openai.com/v1/models` and `/v1/responses` transport. Keep `store: false`, streaming, and user-local execution. Remove undocumented quota calls and Codex-only headers/assumptions unless separately documented for SIWC.
+6. Implement form-encoded refresh with the issued client ID and resource, serialize refresh-token rotation, and implement revocation via the discovery revocation endpoint. Clear local tokens safely and report when remote revocation could not be confirmed.
+7. Audit settings export, backup, restore, synchronization, logging, diagnostics, and background execution so SIWC tokens remain local, user-controlled, and never leak into remote persistence or unrelated activity.
+8. Add deterministic tests for registration callback handling, account binding, JWKS signature/key rotation, claim validation, granted scopes, refresh rotation, revocation failures, model discovery, public Responses request shape, and prohibited legacy backend endpoint usage.
+
+Do not change the current login or provider transport in isolation. Preserve the existing user data while implementing and testing the complete replacement. The SIWC release gate remains **P0 / BLOCKED** until both the authentication protocol and the inference transport satisfy the official documentation and Terms.
