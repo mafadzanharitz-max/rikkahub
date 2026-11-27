@@ -26,6 +26,7 @@ import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceLayout
 import me.rerere.workspace.WorkspaceStorageArea
+import me.rerere.workspace.WorkspaceShellStatus
 import java.io.File
 import java.io.InputStream
 
@@ -384,7 +385,22 @@ class WorkspaceDetailVM(
 
     private fun loadWorkspace() {
         viewModelScope.launch {
-            val workspace = repository.getById(id)
+            var workspace = repository.getById(id)
+            // A force-stopped install leaves INSTALLING in the database because its finally/catch
+            // block never runs. Recover it when the workspace detail screen is opened; the
+            // repository-wide integrity check is not guaranteed to run on this navigation path.
+            if (workspace?.capabilities()?.rootfs == true &&
+                workspace.shellStatus == WorkspaceShellStatus.INSTALLING.name
+            ) {
+                try {
+                    repository.recoverRootfs(id)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // recoverRootfs persists BROKEN when backup recovery fails; reload that state.
+                }
+                workspace = repository.getById(id)
+            }
             val layout = repository.layout(id)
             _state.update { it.copy(workspace = workspace, layout = layout) }
         }
