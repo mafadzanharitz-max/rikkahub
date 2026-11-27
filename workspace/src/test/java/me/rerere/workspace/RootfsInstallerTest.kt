@@ -112,6 +112,43 @@ class RootfsInstallerTest {
         assertFalse(backup.exists())
     }
 
+    @Test
+    fun recoverBackupRestoresValidBackupOverIncompleteActiveRootfs() {
+        val manager = WorkspaceManager(tmp.newFolder("incomplete-active-base"))
+        val root = "local"
+        manager.ensureWorkspace(root)
+        File(manager.linuxDir(root), "bin").mkdirs()
+        File(manager.linuxDir(root), "partial-install").writeText("incomplete")
+        val backup = File(manager.tempDir(root), "rootfs-backup").apply { mkdirs() }
+        File(backup, "bin").mkdirs()
+        File(backup, "bin/sh").writeText("previous-shell")
+
+        RootfsInstaller(manager).recoverBackup(root)
+
+        assertTrue(manager.hasRootfs(root))
+        assertEquals("previous-shell", File(manager.linuxDir(root), "bin/sh").readText())
+        assertFalse(backup.exists())
+        assertFalse(File(manager.linuxDir(root), "partial-install").exists())
+    }
+
+    @Test
+    fun recoverBackupKeepsValidActiveRootfsAndRemovesStaleBackup() {
+        val manager = WorkspaceManager(tmp.newFolder("valid-active-base"))
+        val root = "local"
+        manager.ensureWorkspace(root)
+        File(manager.linuxDir(root), "bin").mkdirs()
+        File(manager.linuxDir(root), "bin/sh").writeText("new-shell")
+        val backup = File(manager.tempDir(root), "rootfs-backup").apply { mkdirs() }
+        File(backup, "bin").mkdirs()
+        File(backup, "bin/sh").writeText("previous-shell")
+
+        RootfsInstaller(manager).recoverBackup(root)
+
+        assertTrue(manager.hasRootfs(root))
+        assertEquals("new-shell", File(manager.linuxDir(root), "bin/sh").readText())
+        assertFalse(backup.exists())
+    }
+
     private fun createInstaller() = RootfsInstaller(WorkspaceManager(tmp.newFolder()))
 
     private fun OutputStream.writeTarEntry(name: String, type: Char, data: ByteArray, linkName: String = "") {
