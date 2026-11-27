@@ -148,7 +148,7 @@ def apply(root):
         val rootPath = root.canonicalFile.toPath()
         val parentPath = (target.parentFile ?: root).canonicalFile.toPath()
         val resolved = if (File(linkName).isAbsolute) {
-            root.resolve(linkName.trimStart('/', '\\')).canonicalFile.toPath()
+            root.resolve(linkName.trimStart('/', '\\\\')).canonicalFile.toPath()
         } else {
             File(target.parentFile ?: root, linkName).canonicalFile.toPath()
         }
@@ -156,16 +156,18 @@ def apply(root):
             "Symlink escapes rootfs: " + target.name
         }
         val relativeTarget = parentPath.relativize(resolved).toFile()
-        require(!Files.isSymbolicLink(target.toPath())) {
-            "Refusing to replace an existing symlink"
-        }
-        if (target.exists()) {
-            require(target.delete()) { "Unable to replace existing RootFS symlink entry" }
+        // Replace the final link itself, including dangling links; never follow it.
+        if (Files.isSymbolicLink(target.toPath())) {
+            Files.delete(target.toPath())
+        } else if (target.exists()) {
+            require(target.isFile && target.delete()) {
+                "Unable to replace existing RootFS symlink entry"
+            }
         }
         Files.createSymbolicLink(target.toPath(), relativeTarget.toPath())
     }
 
-''' + s[b:]
+'''
     a = s.find("    private fun createHardLink(")
     b = s.find("    private fun InputStream.readTarHeader(", a)
     if a < 0 or b < 0: raise SystemExit("Hardlink helper boundaries changed")
@@ -194,28 +196,29 @@ def apply(root):
     s = s[:a] + '''    private fun File.safeResolve(path: String): File {
         val normalized = normalizeTarPath(path)
         val root = canonicalFile
+        val rootPath = root.toPath()
         var current = root
         val parts = normalized.split('/').filter { it.isNotEmpty() }
         parts.forEachIndexed { index, part ->
             current = File(current, part)
-            require(!Files.isSymbolicLink(current.toPath())) {
-                "RootFS archive entry traverses a symlink: $path"
-            }
+            // Parent symlinks redirect subsequent archive writes and are forbidden.
+            // The final component may be a dangling link; entry-specific logic handles it.
             if (index < parts.lastIndex) {
+                require(!Files.isSymbolicLink(current.toPath())) {
+                    "RootFS archive entry traverses a symlink: $path"
+                }
                 require(!current.exists() || current.isDirectory) {
                     "RootFS archive path has a non-directory parent: $path"
                 }
             }
         }
-        val canonical = current.canonicalFile
-        require(canonical.path == root.path ||
-            canonical.path.startsWith(root.path + File.separator)) {
+        require(current.toPath().normalize().startsWith(rootPath)) {
             "RootFS entry escapes target directory: $path"
         }
         return current
     }
 
-''' + s[b:]
+'''
 
     s = once(s, '                    TarEntryType.FILE -> {\n                        target.outputStream().use { output ->',
 '''                    TarEntryType.FILE -> {
@@ -444,6 +447,32 @@ def apply(root):
     }
 
 '''
+    replacement_test = '''    @Test
+    fun extractReplacesExistingDanglingSymlinkEntry() {
+        val archive = tmp.newFile("replace-symlink.tar.gz")
+        GZIPOutputStream(archive.outputStream()).use { out ->
+            out.writeTarEntry("usr/", '5', ByteArray(0))
+            out.writeTarEntry("usr/bin/", '5', ByteArray(0))
+            out.writeTarEntry("usr/bin/perl", '0', "perl".toByteArray())
+            out.writeTarEntry("usr/bin/perl5.38.2", '2', ByteArray(0), linkName = "missing-perl")
+            out.writeTarEntry("usr/bin/perl5.38.2", '2', ByteArray(0), linkName = "/usr/bin/perl")
+            out.write(ByteArray(TAR_BLOCK * 2))
+        }
+        val target = tmp.newFolder("replace-symlink")
+        createInstaller().extractTar(archive, target) {}
+
+        val link = File(target, "usr/bin/perl5.38.2")
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertEquals("perl", Files.readSymbolicLink(link.toPath()).toString())
+        assertEquals("perl", link.readText())
+    }
+
+'''
+    if "extractReplacesExistingDanglingSymlinkEntry" not in tests:
+        marker = "    private fun createInstaller()"
+        if tests.count(marker) != 1: raise SystemExit("Archive test insertion point changed")
+        tests = tests.replace(marker, replacement_test + marker, 1)
+
     if "extractRejectsPathTraversal" not in tests:
         marker = "    private fun createInstaller()"
         if tests.count(marker) != 1: raise SystemExit("Archive test insertion point changed")
