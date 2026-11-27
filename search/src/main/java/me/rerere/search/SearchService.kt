@@ -78,8 +78,8 @@ interface SearchService<T : SearchServiceOptions> {
         @Volatile
         internal var httpClient: OkHttpClient = OkHttpClient.Builder()
             .retryOnConnectionFailure(true)
-            .followRedirects(true)
-            .followSslRedirects(true)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
 
@@ -87,7 +87,11 @@ interface SearchService<T : SearchServiceOptions> {
         internal var keyRoulette: KeyRoulette = KeyRoulette.default()
 
         fun init(client: OkHttpClient, context: Context? = null) {
-            httpClient = client
+            // Search requests may carry provider API keys in headers or query parameters.
+            httpClient = client.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
             keyRoulette = if (context != null) KeyRoulette.lru(context) else KeyRoulette.default()
         }
 
