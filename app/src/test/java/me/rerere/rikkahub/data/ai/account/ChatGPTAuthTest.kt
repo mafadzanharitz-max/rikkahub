@@ -12,7 +12,7 @@ import org.junit.Test
 class ChatGPTAuthTest {
     @Test
     fun `OAuth token revocation client refuses redirects`() {
-        val base = OkHttpClient.Builder()
+        val base = okhttp3.OkHttpClient.Builder()
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
