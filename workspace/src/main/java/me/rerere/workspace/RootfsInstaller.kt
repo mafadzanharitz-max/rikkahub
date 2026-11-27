@@ -37,18 +37,54 @@ class RootfsInstaller(
         val tempDir = manager.tempDir(root)
         val archive = File(tempDir, "rootfs.${format.extension}")
         val stagingDir = File(tempDir, "rootfs-staging")
+        val backupDir = File(tempDir, "rootfs-backup")
         val linuxDir = manager.linuxDir(root)
 
         try {
+            // Download, extract, patch, and validate away from the active RootFS.
+            // A force-stop before activation must never damage the currently usable system.
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
             download(url, archive, onProgress)
             extractTar(archive, stagingDir, format, onProgress)
-            linuxDir.deleteRecursively()
-            require(stagingDir.renameTo(linuxDir)) {
-                "Failed to move rootfs into workspace"
+            patcher.patch(stagingDir)
+            require(WorkspaceManager.isUsableRootfs(stagingDir)) {
+                "Downloaded RootFS is missing a usable /bin/sh"
             }
-            patcher.patch(linuxDir)
+
+            // Resolve a previous interrupted transaction before starting another one.
+            recoverBackupLocked(linuxDir, backupDir)
+
+            // Keep the previous usable RootFS until the new one is fully activated.
+            if (manager.hasRootfs(root)) {
+                require(!backupDir.exists()) { "RootFS backup still exists after recovery" }
+                require(linuxDir.renameTo(backupDir)) {
+                    "Failed to preserve the current RootFS before activation"
+                }
+            } else {
+                linuxDir.deleteRecursively()
+            }
+
+            try {
+                require(stagingDir.renameTo(linuxDir)) {
+                    "Failed to activate the new RootFS"
+                }
+                check(manager.hasRootfs(root)) {
+                    "Activated RootFS failed its integrity check"
+                }
+            } catch (error: Throwable) {
+                linuxDir.deleteRecursively()
+                if (backupDir.exists()) {
+                    require(backupDir.renameTo(linuxDir)) {
+                        "RootFS activation failed and the previous backup could not be restored"
+                    }
+                }
+                throw error
+            }
+
+            // If the process is killed before this cleanup, recovery prefers the valid active
+            // RootFS and removes the stale backup on the next startup.
+            backupDir.deleteRecursively()
             onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
         } finally {
             archive.delete()
@@ -58,10 +94,32 @@ class RootfsInstaller(
 
     /** Recover an interrupted installation before workspace integrity is evaluated. */
     fun recoverBackup(root: String) = manager.withRootfsLock(root) {
-        recoverRootfsBackup(
+        recoverBackupLocked(
             manager.linuxDir(root),
             File(manager.tempDir(root), "rootfs-backup"),
         )
+    }
+
+    /**
+     * Complete or roll back the two-rename activation transaction.
+     * A valid active RootFS means activation completed; otherwise restore a valid backup.
+     * An invalid backup is retained when no valid active RootFS exists, for data preservation.
+     */
+    private fun recoverBackupLocked(linuxDir: File, backupDir: File) {
+        if (!backupDir.exists()) return
+
+        if (WorkspaceManager.isUsableRootfs(linuxDir)) {
+            backupDir.deleteRecursively()
+            return
+        }
+
+        require(WorkspaceManager.isUsableRootfs(backupDir)) {
+            "Neither the active RootFS nor its backup is usable; backup preserved at ${backupDir.path}"
+        }
+        linuxDir.deleteRecursively()
+        require(backupDir.renameTo(linuxDir)) {
+            "Failed to restore the previous RootFS backup"
+        }
     }
 
     private fun download(
