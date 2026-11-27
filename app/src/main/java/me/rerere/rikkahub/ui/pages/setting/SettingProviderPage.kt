@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEachIndexed
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import me.rerere.ui.toast.ToastType
 import kotlin.uuid.Uuid
 import me.rerere.ai.provider.ProviderSetting
@@ -80,6 +82,7 @@ import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Tick02
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.account.ProviderAccountManager
 import me.rerere.rikkahub.ui.components.ui.QRCodeScannerDialog
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.RECOMMENDED_PROVIDERS
@@ -99,6 +102,7 @@ import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.components.RikkaConfirmDialog
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
@@ -106,6 +110,8 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    val deleteScope = rememberCoroutineScope()
+    val accountManager = koinInject<ProviderAccountManager>()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var searchQuery by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<ProviderSetting?>(null) }
@@ -254,9 +260,15 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
         dismissText = stringResource(R.string.cancel),
         onConfirm = {
             deleteTarget?.let { target ->
-                vm.updateSettings { latest -> latest.copy(providers = latest.providers.filter { it.id != target.id }) }
+                deleteScope.launch {
+                    // Revoke account sessions and invalidate an in-flight login before removing the provider.
+                    if (target is ProviderSetting.Account) accountManager.logout(target.id)
+                    vm.updateSettings { latest ->
+                        latest.copy(providers = latest.providers.filter { it.id != target.id })
+                    }
+                    deleteTarget = null
+                }
             }
-            deleteTarget = null
         },
         onDismiss = { deleteTarget = null },
     ) {

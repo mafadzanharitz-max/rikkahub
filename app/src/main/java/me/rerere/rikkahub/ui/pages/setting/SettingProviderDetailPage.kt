@@ -109,6 +109,7 @@ import me.rerere.hugeicons.stroke.Share01
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.account.ProviderAccountManager
 import me.rerere.rikkahub.data.ai.account.preserveCredential
 import me.rerere.rikkahub.ui.components.ai.ExtensionEmptyState
 import me.rerere.rikkahub.ui.components.ai.ModelAbilityTag
@@ -184,6 +185,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val pager = rememberPagerState { ProviderDetailTab.entries.size }
     val toaster = LocalToaster.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val accountManager = koinInject<ProviderAccountManager>()
 
     val onEdit = { newProvider: ProviderSetting ->
         vm.updateSettings { latest ->
@@ -199,10 +202,14 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
         }
     }
     val onDelete = {
-        vm.updateSettings { latest ->
-            latest.copy(providers = latest.providers.filter { it.id != provider.id })
+        scope.launch {
+            // Revoke account sessions and invalidate an in-flight login before removing the provider.
+            if (provider is ProviderSetting.Account) accountManager.logout(provider.id)
+            vm.updateSettings { latest ->
+                latest.copy(providers = latest.providers.filter { it.id != provider.id })
+            }
+            navController.popBackStack()
         }
-        navController.popBackStack()
     }
 
     Scaffold(
