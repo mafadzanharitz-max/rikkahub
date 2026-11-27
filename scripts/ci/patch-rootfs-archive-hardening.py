@@ -8,14 +8,13 @@ TESTS = Path("workspace/src/test/java/me/rerere/workspace/RootfsInstallerTest.kt
 def once(s, old, new, label):
     old_count = s.count(old)
     new_count = s.count(new)
-    if new_count:
-        if old_count == 0:
+    if new_count and old_count == 0:
+        return s
+    if new_count and old_count == 1 and len(old) <= len(new):
+        old_index = s.find(old)
+        new_index = s.find(new)
+        if new_index <= old_index < new_index + len(new):
             return s
-        if old_count == 1:
-            old_index = s.find(old)
-            new_index = s.find(new)
-            if len(old) <= len(new) and new_index <= old_index < new_index + len(new):
-                return s
         raise SystemExit(f"{label}: patched and unpatched targets both present")
     if old_count != 1:
         raise SystemExit(f"{label}: expected one target, found {old_count}")

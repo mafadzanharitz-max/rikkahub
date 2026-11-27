@@ -28,6 +28,12 @@ class OnceTests(unittest.TestCase):
     def test_replaces_when_replacement_removes_original_text(self):
         self.assertEqual("prefix new suffix", MODULE.once("prefix old suffix", "old", "new", "case"))
 
+    def test_replaces_shrinking_patch_even_if_new_text_exists_elsewhere(self):
+        source = "onProgress earlier; entries++ onProgress"
+        self.assertEqual("onProgress earlier; onProgress", MODULE.once(
+            source, "entries++ onProgress", "onProgress", "case"
+        ))
+
     def test_rejects_unpatched_target_next_to_existing_replacement(self):
         with self.assertRaises(SystemExit):
             MODULE.once("new old", "old", "new", "case")
