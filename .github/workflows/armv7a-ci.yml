@@ -74,6 +74,21 @@ jobs:
         run: python3 scripts/ci/patch-rootfs-transaction.py .
       - name: Apply bounded RootFS archive extraction hardening
         run: python3 scripts/ci/patch-rootfs-archive-hardening.py .
+      - name: Validate generated RootFS patch and patch idempotency
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/*.py
+          INSTALLER="workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt"
+          TESTS="workspace/src/test/java/me/rerere/workspace/RootfsInstallerTest.kt"
+          BEFORE="$(sha256sum "$INSTALLER" "$TESTS")"
+          python3 scripts/ci/patch-rootfs-archive-hardening.py .
+          AFTER="$(sha256sum "$INSTALLER" "$TESTS")"
+          if [ "$BEFORE" != "$AFTER" ]; then
+            echo "::error::RootFS archive patch is not idempotent."
+            diff -u <(printf '%s\\n' "$BEFORE") <(printf '%s\\n' "$AFTER") || true
+            exit 1
+          fi
+          python3 scripts/ci/validate-rootfs-patch.py .
       - name: Make an empty fork release feed a clean no-update state
         run: python3 scripts/ci/patch-armv7-updater.py
       - name: Install pinned Android SDK, NDK and CMake
