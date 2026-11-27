@@ -167,7 +167,7 @@ def apply(root):
         Files.createSymbolicLink(target.toPath(), relativeTarget.toPath())
     }
 
-'''
+''' + s[b:]
     a = s.find("    private fun createHardLink(")
     b = s.find("    private fun InputStream.readTarHeader(", a)
     if a < 0 or b < 0: raise SystemExit("Hardlink helper boundaries changed")
@@ -218,7 +218,7 @@ def apply(root):
         return current
     }
 
-'''
+''' + s[b:]
 
     s = once(s, '                    TarEntryType.FILE -> {\n                        target.outputStream().use { output ->',
 '''                    TarEntryType.FILE -> {
