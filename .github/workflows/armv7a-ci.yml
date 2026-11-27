@@ -6,6 +6,9 @@ on:
       - port/armv7a-3.3.0
       - security/http-log-redaction
       - hardening/rootfs-transactional-install
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
