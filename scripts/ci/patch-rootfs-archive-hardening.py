@@ -149,6 +149,8 @@ def apply(root):
 
     a = s.find("    private fun createSymlink(")
     b = s.find("    private fun createHardLink(", a)
+    if b < 0:
+        b = s.find("    internal fun createHardLink(", a)
     if a < 0 or b < 0: raise SystemExit("Symlink helper boundaries changed")
     s = s[:a] + r'''    private fun createSymlink(root: File, target: File, linkName: String) {
         require(linkName.isNotBlank()) { "RootFS symlink target is empty" }
@@ -175,7 +177,9 @@ def apply(root):
     }
 
 ''' + s[b:]
-    a = s.find("    private fun createHardLink(")
+    a = s.find("    internal fun createHardLink(")
+    if a < 0:
+        a = s.find("    private fun createHardLink(")
     b = s.find("    private fun InputStream.readTarHeader(", a)
     if a < 0 or b < 0: raise SystemExit("Hardlink helper boundaries changed")
     s = s[:a] + '''    internal fun createHardLink(
