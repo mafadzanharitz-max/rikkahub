@@ -127,8 +127,8 @@ class ProviderAccountManager(
         val refreshLock = refreshLocks.computeIfAbsent(providerId) { Mutex() }
         try {
             refreshLock.withLock {
-            var credentialToRevoke: OAuthCredential? = null
-            settingsStore.update { old ->
+                var credentialToRevoke: OAuthCredential? = null
+                settingsStore.update { old ->
                 synchronized(loginLock) {
                     if (!loginAttempts.isCurrent(providerId, logoutAttempt)) {
                         old
@@ -163,18 +163,18 @@ class ProviderAccountManager(
                 }
             }
 
-            // Local sign-out is final even if remote revocation is unavailable. Because the
-            // refresh lock is held, this uses the latest rotated refresh token and no later
-            // refresh can race in and leave a live token behind.
-            val credential = credentialToRevoke
-            val refreshToken = credential?.refreshToken
-            val clientId = credential?.oauthClientId
-            if (refreshToken != null && clientId != null) {
-                val revoked = runCatching {
-                    ChatGPTAuth.revokeRefreshToken(client, refreshToken, clientId)
-                }.getOrDefault(false)
-                if (!revoked) Log.w(TAG, "ChatGPT remote session revocation was not confirmed")
-            }
+                // Local sign-out is final even if remote revocation is unavailable. Because the
+                // refresh lock is held, this uses the latest rotated refresh token and no later
+                // refresh can race in and leave a live token behind.
+                val credential = credentialToRevoke
+                val refreshToken = credential?.refreshToken
+                val clientId = credential?.oauthClientId
+                if (refreshToken != null && clientId != null) {
+                    val revoked = runCatching {
+                        ChatGPTAuth.revokeRefreshToken(client, refreshToken, clientId)
+                    }.getOrDefault(false)
+                    if (!revoked) Log.w(TAG, "ChatGPT remote session revocation was not confirmed")
+                }
             }
         } finally {
             synchronized(loginLock) {
@@ -239,6 +239,7 @@ class ProviderAccountManager(
             val refreshAttempt = snapshot.first
             val latest = snapshot.second
             val credential = snapshot.third
+            if (!credential.needsRefresh(rejectedAccessToken)) return@withLock credential
 
             val refreshToken = credential.refreshToken
                 ?: error("${latest.name}: session expired, please sign in again")
