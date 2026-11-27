@@ -114,13 +114,13 @@ class ProviderAccountManagerTest {
         ),
     )
 
-    private suspend fun createStore(): SettingsStore {
+    private suspend fun createStore(accountProvider: ProviderSetting.Account = provider): SettingsStore {
         val store = SettingsStore(
             PreferenceDataStoreFactory.create(scope = storeScope) { File(temp.root, "settings.preferences_pb") },
             storeScope,
         )
         store.awaitLoaded()
-        store.update { it.copy(providers = it.providers + provider) }
+        store.update { it.copy(providers = it.providers + accountProvider) }
         return store
     }
 
@@ -147,6 +147,40 @@ class ProviderAccountManagerTest {
         }
         assertEquals("new-access", saved?.accessToken)
         assertEquals("account", saved?.accountId)
+    }
+
+    @Test
+    fun `cached credential is not returned after sign out begins`() = runBlocking {
+        val validProvider = provider.copy(
+            credential = provider.credential!!.copy(
+                expiresAt = System.currentTimeMillis() + 60 * 60 * 1000L,
+            ),
+        )
+        val store = createStore(validProvider)
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        // Force a refresh while the cached access token is still time-valid.
+        val refresh = async(Dispatchers.Default) {
+            runCatching {
+                manager.getCredential(validProvider, rejectedAccessToken = "old-access")
+            }
+        }
+        assertTrue(withContext(Dispatchers.IO) { requestArrived.await(10, TimeUnit.SECONDS) })
+
+        // Logout marks the session as signing out before it can acquire the held refresh lock.
+        val logout = async(start = CoroutineStart.UNDISPATCHED) { manager.logout(provider.id) }
+
+        // This call would otherwise take getCredential's lock-free cached-token fast path.
+        assertTrue(
+            runCatching {
+                manager.getCredential(validProvider, rejectedAccessToken = null)
+            }.isFailure
+        )
+
+        release.countDown()
+        logout.await()
+        assertTrue(refresh.await().isFailure)
+        assertNull(store.credential())
     }
 
     @Test
