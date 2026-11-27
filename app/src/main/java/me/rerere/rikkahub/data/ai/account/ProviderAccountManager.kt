@@ -133,8 +133,10 @@ class ProviderAccountManager(
                 }
                 val credential = providerToRevoke?.credential
                 val refreshToken = credential?.refreshToken
-                val remoteRevocationConfirmed = if (credential == null || refreshToken.isNullOrBlank()) {
+                val remoteRevocationConfirmed = if (credential == null) {
                     true
+                } else if (refreshToken.isNullOrBlank()) {
+                    false
                 } else {
                     when (providerToRevoke) {
                         is ProviderSetting.ChatGPT -> {
@@ -150,7 +152,7 @@ class ProviderAccountManager(
                         else -> false
                     }
                 }
-                if (!remoteRevocationConfirmed && !refreshToken.isNullOrBlank()) {
+                if (!remoteRevocationConfirmed) {
                     Log.w(TAG, "Remote account session revocation was not confirmed")
                 }
 

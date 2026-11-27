@@ -44,12 +44,17 @@ internal object GrokAuth {
     )
 
     suspend fun revokeRefreshToken(http: OkHttpClient, refreshToken: String): Boolean {
+        // Never forward a refresh token through an HTTP redirect, including 307/308.
+        val revocationHttp = http.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
         val endpoint = try {
             val discoveryRequest = Request.Builder()
                 .url("$ISSUER/.well-known/openid-configuration")
                 .get()
                 .build()
-            http.newCall(discoveryRequest).await().use { response ->
+            revocationHttp.newCall(discoveryRequest).await().use { response ->
                 if (!response.isSuccessful) return false
                 val document = Json.parseToJsonElement(response.body.string()).jsonObject
                 require(document["issuer"]?.jsonPrimitive?.contentOrNull == ISSUER) {
@@ -73,7 +78,7 @@ internal object GrokAuth {
         var attempt = 0
         while (attempt < 3) {
             val code = try {
-                http.newCall(request).await().use { it.code }
+                revocationHttp.newCall(request).await().use { it.code }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
