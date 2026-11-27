@@ -9,7 +9,7 @@ SOURCE_MARKERS = (
     "private fun parsePax(text: String)",
     "private inner class LimitedInputStream(",
     "private fun createSymlink(root: File, target: File, linkName: String)",
-    "private fun createHardLink(root: File, target: File, linkName: String)",
+    "internal fun createHardLink(",
     "private fun File.safeResolve(path: String)",
     "root.resolve(linkName.trimStart('/')).canonicalFile.toPath()",
     "Files.isSymbolicLink(target.toPath())",
