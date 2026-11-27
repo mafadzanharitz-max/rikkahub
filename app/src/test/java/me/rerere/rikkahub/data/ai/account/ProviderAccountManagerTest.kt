@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai.account
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -157,8 +158,10 @@ class ProviderAccountManagerTest {
             runCatching { manager.getCredential(provider, rejectedAccessToken = null) }
         }
         assertTrue(withContext(Dispatchers.IO) { requestArrived.await(10, TimeUnit.SECONDS) })
-        manager.logout(provider.id)
+        // UNDISTPATCHED ensures logout invalidates the session before it suspends on refreshLock.
+        val logout = async(start = CoroutineStart.UNDISPATCHED) { manager.logout(provider.id) }
         release.countDown()
+        logout.await()
 
         assertTrue(caller.await().isFailure)
         assertNull(store.credential())

@@ -200,6 +200,9 @@ class ProviderAccountManager(
     ): OAuthCredential {
         val lock = refreshLocks.computeIfAbsent(setting.id) { Mutex() }
         return lock.withLock {
+            // Logout invalidates this generation before waiting for the refresh lock.
+            // Persist a rotated token first (so logout can revoke it), then reject the stale caller.
+            val refreshAttempt = loginAttempts.current(setting.id)
             val latest = findAccount(setting.id) ?: setting
             val credential = latest.credential ?: error("${latest.name}: not signed in")
             if (!credential.needsRefresh(rejectedAccessToken)) return@withLock credential
@@ -233,6 +236,9 @@ class ProviderAccountManager(
             }
             // 刷新期间用户可能退出或换了账号，这时结果作废，不能把旧会话写回去
             if (!replaceCredential(latest.id, expected = credential, credential = refreshed)) {
+                error("${latest.name}: sign-in changed during refresh, please try again")
+            }
+            if (!loginAttempts.isCurrent(latest.id, refreshAttempt)) {
                 error("${latest.name}: sign-in changed during refresh, please try again")
             }
             refreshed
@@ -442,6 +448,9 @@ internal class AccountLoginAttemptTracker {
         generations[providerId] = next
         return next
     }
+
+    @Synchronized
+    fun current(providerId: Uuid): Long = generations[providerId] ?: 0L
 
     @Synchronized
     fun isCurrent(providerId: Uuid, attempt: Long): Boolean =
