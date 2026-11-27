@@ -25,6 +25,9 @@ class OnceTests(unittest.TestCase):
             MODULE.once(source, "old", "expanded-old", "case"),
         )
 
+    def test_replaces_when_replacement_removes_original_text(self):
+        self.assertEqual("prefix new suffix", MODULE.once("prefix old suffix", "old", "new", "case"))
+
     def test_rejects_unpatched_target_next_to_existing_replacement(self):
         with self.assertRaises(SystemExit):
             MODULE.once("new old", "old", "new", "case")

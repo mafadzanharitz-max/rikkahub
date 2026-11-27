@@ -14,7 +14,7 @@ def once(s, old, new, label):
         if old_count == 1:
             old_index = s.find(old)
             new_index = s.find(new)
-            if new_index <= old_index < new_index + len(new):
+            if len(old) <= len(new) and new_index <= old_index < new_index + len(new):
                 return s
         raise SystemExit(f"{label}: patched and unpatched targets both present")
     if old_count != 1:
