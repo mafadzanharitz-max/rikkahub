@@ -2,6 +2,8 @@ package me.rerere.rikkahub.data.ai.account
 
 import kotlin.uuid.Uuid
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -11,8 +13,8 @@ class AccountLoginAttemptTrackerTest {
         val tracker = AccountLoginAttemptTracker()
         val providerId = Uuid.random()
 
-        val first = tracker.begin(providerId)
-        val second = tracker.begin(providerId)
+        val first = tracker.begin(providerId)!!
+        val second = tracker.begin(providerId)!!
 
         assertFalse(tracker.isCurrent(providerId, first))
         assertTrue(tracker.isCurrent(providerId, second))
@@ -22,7 +24,7 @@ class AccountLoginAttemptTrackerTest {
     fun `cancellation invalidates pending login result`() {
         val tracker = AccountLoginAttemptTracker()
         val providerId = Uuid.random()
-        val attempt = tracker.begin(providerId)
+        val attempt = tracker.begin(providerId)!!
 
         tracker.invalidate(providerId)
 
@@ -50,7 +52,7 @@ class AccountLoginAttemptTrackerTest {
         val logoutAttempt = tracker.beginLogout(providerId)
         assertTrue(tracker.isLoggingOut(providerId))
 
-        val loginAttempt = tracker.begin(providerId)
+        val loginAttempt = tracker.begin(providerId)!!
 
         assertFalse(tracker.isCurrent(providerId, logoutAttempt))
         assertTrue(tracker.isCurrent(providerId, loginAttempt))

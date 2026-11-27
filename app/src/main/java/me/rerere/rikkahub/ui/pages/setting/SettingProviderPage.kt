@@ -111,6 +111,8 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    val toaster = LocalToaster.current
+    val remoteLogoutWarning = stringResource(R.string.setting_provider_page_remote_logout_warning)
     val deleteScope = rememberCoroutineScope()
     val accountManager = koinInject<ProviderAccountManager>()
     val settingsStore = koinInject<SettingsStore>()
@@ -264,7 +266,9 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
             deleteTarget?.let { target ->
                 deleteScope.launch {
                     // Revoke account sessions and invalidate an in-flight login before removing the provider.
-                    if (target is ProviderSetting.Account) accountManager.logout(target.id)
+                    if (target is ProviderSetting.Account && !accountManager.logout(target.id)) {
+                        toaster.show(remoteLogoutWarning, type = ToastType.Warning)
+                    }
                     settingsStore.update { latest ->
                         latest.copy(providers = latest.providers.filter { it.id != target.id })
                     }

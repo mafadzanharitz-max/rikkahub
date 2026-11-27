@@ -76,7 +76,7 @@ class ProviderAccountManager(
     fun startLogin(providerId: Uuid, context: Context) {
         synchronized(loginLock) {
             val provider = findAccount(providerId) ?: return
-            val attempt = loginAttempts.begin(providerId)
+            val attempt = loginAttempts.begin(providerId) ?: return
             loginJobs.remove(providerId)?.cancel()
             setStatus(providerId, AccountLoginStatus.Authorizing)
             val job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
@@ -115,9 +115,8 @@ class ProviderAccountManager(
         }
     }
 
-    suspend fun logout(providerId: Uuid) = withContext(NonCancellable) {
-        // Mark sign-out before waiting for refresh-token rotation. Credential fast paths must
-        // not hand out the old session while the refresh lock is still held by another request.
+    suspend fun logout(providerId: Uuid): Boolean = withContext(NonCancellable) {
+        // Block credential use before waiting for refresh-token rotation.
         val logoutAttempt = synchronized(loginLock) {
             val attempt = loginAttempts.beginLogout(providerId)
             loginJobs.remove(providerId)?.cancel()
@@ -127,54 +126,84 @@ class ProviderAccountManager(
         val refreshLock = refreshLocks.computeIfAbsent(providerId) { Mutex() }
         try {
             refreshLock.withLock {
-                var credentialToRevoke: OAuthCredential? = null
-                settingsStore.update { old ->
-                synchronized(loginLock) {
-                    if (!loginAttempts.isCurrent(providerId, logoutAttempt)) {
-                        old
-                    } else {
-                        val currentProvider = old.providers.firstOrNull { it.id == providerId }
-                        if (currentProvider is ProviderSetting.ChatGPT) {
-                            credentialToRevoke = currentProvider.credential
+                val providerToRevoke = synchronized(loginLock) {
+                    if (!loginAttempts.isCurrent(providerId, logoutAttempt)) return@withLock true
+                    settingsStore.settingsFlow.value.providers
+                        .find { it.id == providerId } as? ProviderSetting.Account
+                }
+                val credential = providerToRevoke?.credential
+                val refreshToken = credential?.refreshToken
+                val remoteRevocationConfirmed = if (credential == null || refreshToken.isNullOrBlank()) {
+                    true
+                } else {
+                    when (providerToRevoke) {
+                        is ProviderSetting.ChatGPT -> {
+                            val clientId = credential.oauthClientId
+                            if (clientId.isNullOrBlank()) false
+                            else runCatching {
+                                ChatGPTAuth.revokeRefreshToken(client, refreshToken, clientId)
+                            }.getOrDefault(false)
                         }
-                        old.copy(
-                            providers = old.providers.map { provider ->
-                                if (provider.id != providerId) provider
-                                else when (provider) {
-                                    is ProviderSetting.ChatGPT -> {
-                                        val current = provider.credential
-                                        val registration = provider.registration
-                                            ?: current?.oauthClientId?.let { clientId ->
-                                                ChatGPTRegistration(
-                                                    clientId = clientId,
-                                                    issuer = current.issuer,
-                                                    subject = current.subject,
-                                                    email = current.email,
-                                                )
-                                            }
-                                        provider.copy(credential = null, registration = registration)
-                                    }
-                                    is ProviderSetting.Account -> provider.withCredential(null)
-                                    else -> provider
-                                }
-                            }
-                        )
+                        is ProviderSetting.Grok -> runCatching {
+                            GrokAuth.revokeRefreshToken(client, refreshToken)
+                        }.getOrDefault(false)
+                        else -> false
                     }
                 }
-            }
-
-                // Local sign-out is final even if remote revocation is unavailable. Because the
-                // refresh lock is held, this uses the latest rotated refresh token and no later
-                // refresh can race in and leave a live token behind.
-                val credential = credentialToRevoke
-                val refreshToken = credential?.refreshToken
-                val clientId = credential?.oauthClientId
-                if (refreshToken != null && clientId != null) {
-                    val revoked = runCatching {
-                        ChatGPTAuth.revokeRefreshToken(client, refreshToken, clientId)
-                    }.getOrDefault(false)
-                    if (!revoked) Log.w(TAG, "ChatGPT remote session revocation was not confirmed")
+                if (!remoteRevocationConfirmed && !refreshToken.isNullOrBlank()) {
+                    Log.w(TAG, "Remote account session revocation was not confirmed")
                 }
+
+                // Keep the credential persisted until remote revocation has been attempted.
+                // If the process dies during the network request, the user can retry sign-out.
+                var localSignOutCompleted = false
+                settingsStore.update { old ->
+                    synchronized(loginLock) {
+                        if (!loginAttempts.isCurrent(providerId, logoutAttempt)) {
+                            old
+                        } else {
+                            val current = old.providers.firstOrNull { it.id == providerId }
+                            when {
+                                current == null || current !is ProviderSetting.Account -> {
+                                    localSignOutCompleted = true
+                                    old
+                                }
+                                providerToRevoke == null ||
+                                    current::class != providerToRevoke::class ||
+                                    current.credential != credential -> {
+                                    localSignOutCompleted = false
+                                    old
+                                }
+                                else -> {
+                                    localSignOutCompleted = true
+                                    old.copy(
+                                        providers = old.providers.map { provider ->
+                                            if (provider.id != providerId) provider
+                                            else when (provider) {
+                                                is ProviderSetting.ChatGPT -> {
+                                                    val currentCredential = provider.credential
+                                                    val registration = provider.registration
+                                                        ?: currentCredential?.oauthClientId?.let { clientId ->
+                                                            ChatGPTRegistration(
+                                                                clientId = clientId,
+                                                                issuer = currentCredential.issuer,
+                                                                subject = currentCredential.subject,
+                                                                email = currentCredential.email,
+                                                            )
+                                                        }
+                                                    provider.copy(credential = null, registration = registration)
+                                                }
+                                                is ProviderSetting.Account -> provider.withCredential(null)
+                                                else -> provider
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                remoteRevocationConfirmed && localSignOutCompleted
             }
         } finally {
             synchronized(loginLock) {
@@ -482,11 +511,10 @@ internal class AccountLoginAttemptTracker {
     private val logoutAttempts = HashMap<Uuid, Long>()
 
     @Synchronized
-    fun begin(providerId: Uuid): Long {
+    fun begin(providerId: Uuid): Long? {
+        if (providerId in logoutAttempts) return null
         val next = (generations[providerId] ?: 0L) + 1L
         generations[providerId] = next
-        // A fresh login supersedes a logout that has not yet committed its settings mutation.
-        logoutAttempts.remove(providerId)
         return next
     }
 

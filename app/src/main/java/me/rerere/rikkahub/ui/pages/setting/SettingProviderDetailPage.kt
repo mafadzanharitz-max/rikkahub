@@ -206,7 +206,12 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val onDelete = {
         scope.launch {
             // Revoke account sessions and invalidate an in-flight login before removing the provider.
-            if (provider is ProviderSetting.Account) accountManager.logout(provider.id)
+            if (provider is ProviderSetting.Account && !accountManager.logout(provider.id)) {
+                toaster.show(
+                    context.getString(R.string.setting_provider_page_remote_logout_warning),
+                    type = ToastType.Warning,
+                )
+            }
             settingsStore.update { latest ->
                 latest.copy(providers = latest.providers.filter { it.id != provider.id })
             }

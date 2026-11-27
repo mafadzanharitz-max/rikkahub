@@ -1,7 +1,17 @@
 package me.rerere.rikkahub.data.ai.account
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.OAuthCredential
+import me.rerere.common.http.await
 import me.rerere.oauth.OAuthHttpClient
+import okhttp3.FormBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * Grok（SuperGrok）账号登录的协议参数，与 Grok CLI 一致，参照 can1357/oh-my-pi 的 xai-oauth。
@@ -32,6 +42,53 @@ internal object GrokAuth {
         clientId = CLIENT_ID,
         refreshToken = refreshToken,
     )
+
+    suspend fun revokeRefreshToken(http: OkHttpClient, refreshToken: String): Boolean {
+        val endpoint = try {
+            val discoveryRequest = Request.Builder()
+                .url("$ISSUER/.well-known/openid-configuration")
+                .get()
+                .build()
+            http.newCall(discoveryRequest).await().use { response ->
+                if (!response.isSuccessful) return false
+                val document = Json.parseToJsonElement(response.body.string()).jsonObject
+                require(document["issuer"]?.jsonPrimitive?.contentOrNull == ISSUER) {
+                    "Unexpected Grok discovery issuer"
+                }
+                val value = document["revocation_endpoint"]?.jsonPrimitive?.contentOrNull ?: return false
+                require(value.startsWith("$ISSUER/")) { "Unexpected Grok revocation endpoint" }
+                value
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return false
+        }
+        val body = FormBody.Builder()
+            .add("token", refreshToken)
+            .add("token_type_hint", "refresh_token")
+            .add("client_id", CLIENT_ID)
+            .build()
+        val request = Request.Builder().url(endpoint).post(body).build()
+        var attempt = 0
+        while (attempt < 3) {
+            val code = try {
+                http.newCall(request).await().use { it.code }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                attempt++
+                if (attempt >= 3) return false
+                delay(250L * (1 shl attempt))
+                continue
+            }
+            if (code == 200) return true
+            if (code !in 500..599) return false
+            attempt++
+            if (attempt < 3) delay(250L shl attempt)
+        }
+        return false
+    }
 
     /**
      * 把令牌响应转成凭据。账号 ID 取 token 的 `sub`；刷新响应缺的字段沿用 [previous] 里的值。

@@ -24,9 +24,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -37,6 +39,7 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class ProviderAccountManagerTest {
     @get:Rule
@@ -51,26 +54,40 @@ class ProviderAccountManagerTest {
     // 刷新请求到达令牌端点后卡住，直到测试放行
     private val requestArrived = CountDownLatch(1)
     private val refreshRequestCount = AtomicInteger()
+    private val revokeRequestArrived = CountDownLatch(1)
+    private val releaseRevoke = CountDownLatch(1)
+    private val revokeRequestCount = AtomicInteger()
+    private val lastRevokeBody = AtomicReference<String?>()
+    @Volatile private var holdRevokeResponse = false
+    @Volatile private var revokeResponseCode = 200
     private val release = CountDownLatch(1)
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request()
             if (request.url.encodedPath.endsWith("/.well-known/openid-configuration")) {
+                val issuer = if (request.url.host == "auth.x.ai") "https://auth.x.ai" else "https://auth.openai.com"
+                val revokePath = if (request.url.host == "auth.x.ai") "/oauth2/revoke" else "/revoke"
                 Response.Builder()
                     .request(request)
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("")
                     .body(
-                        """{"issuer":"https://auth.openai.com","revocation_endpoint":"https://auth.openai.com/revoke"}"""
+                        """{"issuer":"$issuer","revocation_endpoint":"$issuer$revokePath"}"""
                             .toResponseBody("application/json".toMediaType())
                     )
                     .build()
-            } else if (request.url.encodedPath == "/revoke") {
+            } else if (request.url.encodedPath == "/revoke" || request.url.encodedPath == "/oauth2/revoke") {
+                revokeRequestCount.incrementAndGet()
+                revokeRequestArrived.countDown()
+                val buffer = Buffer()
+                request.body?.writeTo(buffer)
+                lastRevokeBody.set(buffer.readUtf8())
+                if (holdRevokeResponse) releaseRevoke.await(10, TimeUnit.SECONDS)
                 Response.Builder()
                     .request(request)
                     .protocol(Protocol.HTTP_1_1)
-                    .code(200)
+                    .code(revokeResponseCode)
                     .message("")
                     .body("".toResponseBody("application/json".toMediaType()))
                     .build()
@@ -205,6 +222,59 @@ class ProviderAccountManagerTest {
         assertTrue(logout.isCancelled)
         assertTrue(refresh.await().isFailure)
         assertNull(store.credential())
+    }
+
+    @Test
+    fun `logout revokes remote session before clearing local credential`() = runBlocking {
+        val store = createStore()
+        val manager = ProviderAccountManager(store, appScope, client)
+        holdRevokeResponse = true
+
+        val logout = async(Dispatchers.Default) { manager.logout(provider.id) }
+        assertTrue(withContext(Dispatchers.IO) { revokeRequestArrived.await(10, TimeUnit.SECONDS) })
+
+        assertEquals("old-refresh", store.credential()?.refreshToken)
+        assertTrue(runCatching {
+            manager.getCredential(provider, rejectedAccessToken = null)
+        }.isFailure)
+
+        releaseRevoke.countDown()
+        assertTrue(logout.await())
+        assertNull(store.credential())
+    }
+
+    @Test
+    fun `logout clears local credential but reports failed remote revocation`() = runBlocking {
+        val store = createStore()
+        val manager = ProviderAccountManager(store, appScope, client)
+        revokeResponseCode = 503
+
+        val revoked = manager.logout(provider.id)
+
+        assertFalse(revoked)
+        assertNull(store.credential())
+        assertTrue(revokeRequestCount.get() >= 3)
+    }
+
+    @Test
+    fun `grok logout revokes its refresh token before clearing it locally`() = runBlocking {
+        val grokProvider = ProviderSetting.Grok(
+            credential = OAuthCredential(
+                accessToken = "grok-access",
+                refreshToken = "grok-refresh",
+                expiresAt = System.currentTimeMillis() + 60 * 60 * 1000L,
+            )
+        )
+        val store = createStore(grokProvider)
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        assertTrue(manager.logout(grokProvider.id))
+
+        val saved = store.settingsFlow.value.providers.find { it.id == grokProvider.id } as ProviderSetting.Grok
+        assertNull(saved.credential)
+        assertEquals(1, revokeRequestCount.get())
+        assertTrue(lastRevokeBody.get().orEmpty().contains("token=grok-refresh"))
+        assertTrue(lastRevokeBody.get().orEmpty().contains("client_id=${GrokAuth.CLIENT_ID}"))
     }
 
     @Test

@@ -374,6 +374,8 @@ private fun ProviderConfigureAccount(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accountManager = koinInject<ProviderAccountManager>()
+    val toaster = LocalToaster.current
+    val remoteLogoutWarning = stringResource(R.string.setting_provider_page_remote_logout_warning)
     val loginStatus by accountManager.loginStatus.collectAsStateWithLifecycle()
     val status = loginStatus[provider.id]
     val credential = provider.credential
@@ -390,7 +392,13 @@ private fun ProviderConfigureAccount(
                 headlineContent = { Text(credential.email ?: stringResource(R.string.setting_provider_page_signed_in)) },
             )
             item(
-                onClick = { scope.launch { accountManager.logout(provider.id) } },
+                onClick = {
+                    scope.launch {
+                        if (!accountManager.logout(provider.id)) {
+                            toaster.show(remoteLogoutWarning, type = ToastType.Warning)
+                        }
+                    }
+                },
                 leadingContent = {
                     CardGroupIcon(
                         icon = HugeIcons.Logout03,
