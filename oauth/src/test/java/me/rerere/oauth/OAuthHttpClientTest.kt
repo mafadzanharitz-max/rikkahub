@@ -19,6 +19,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,6 +48,19 @@ class OAuthHttpClientTest {
     )
 
     private fun Request.bodyString(): String = Buffer().also { body!!.writeTo(it) }.readUtf8()
+
+    @Test
+    fun `credential-bearing OAuth client refuses redirects`() {
+        val base = OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+
+        val safe = base.withoutCredentialRedirects()
+
+        assertFalse(safe.followRedirects)
+        assertFalse(safe.followSslRedirects)
+    }
 
     @Test
     fun `refresh token uses form encoding by default`() = runBlocking {

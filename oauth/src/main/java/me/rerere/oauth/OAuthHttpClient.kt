@@ -30,9 +30,19 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** OAuth 2.x 的通用 HTTP、PKCE、授权码和刷新令牌客户端。 */
+/**
+ * Build a client for OAuth requests whose body or headers contain credentials.
+ * Redirects are disabled so 307/308 responses cannot forward tokens to another endpoint.
+ */
+fun OkHttpClient.withoutCredentialRedirects(): OkHttpClient = newBuilder()
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .build()
+
 class OAuthHttpClient(
     private val httpClient: OkHttpClient,
 ) {
+    private val credentialHttpClient = httpClient.withoutCredentialRedirects()
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -272,7 +282,7 @@ class OAuthHttpClient(
                 .build()
             // 响应体在回调所在的调度器上读，调用方可能在主线程，读网络放到 IO
             val (code, body) = withContext(Dispatchers.IO) {
-                executeRaw(httpRequest).use { it.code to it.body.string() }
+                executeRaw(httpRequest, credentialHttpClient).use { it.code to it.body.string() }
             }
             if (code in 200..299) return json.decodeFromString(TokenResponse.serializer(), body)
             val error = runCatching {
@@ -303,12 +313,12 @@ class OAuthHttpClient(
             .header("Accept", "application/json")
             .post(body)
             .build()
-        val text = execute(request)
+        val text = execute(request, credentialHttpClient)
         return json.decodeFromString(TokenResponse.serializer(), text)
     }
 
-    private suspend fun execute(request: Request): String {
-        executeRaw(request).use { response ->
+    private suspend fun execute(request: Request, client: OkHttpClient = httpClient): String {
+        executeRaw(request, client).use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
                 // OAuth error bodies are untrusted and may echo authorization codes,
@@ -321,9 +331,9 @@ class OAuthHttpClient(
         }
     }
 
-    private suspend fun executeRaw(request: Request): Response =
+    private suspend fun executeRaw(request: Request, client: OkHttpClient = httpClient): Response =
         suspendCancellableCoroutine { continuation ->
-            val call = httpClient.newCall(request)
+            val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {

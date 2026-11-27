@@ -11,19 +11,6 @@ import org.junit.Test
 
 class ChatGPTAuthTest {
     @Test
-    fun `OAuth token revocation client refuses redirects`() {
-        val base = okhttp3.OkHttpClient.Builder()
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
-
-        val revocationClient = base.forOAuthTokenRevocation()
-
-        assertFalse(revocationClient.followRedirects)
-        assertFalse(revocationClient.followSslRedirects)
-    }
-
-    @Test
     fun `new registration uses dynamic client and SIWC authorization contract`() {
         val oauth = OAuthHttpClient(okhttp3.OkHttpClient())
         val request = ChatGPTAuth.authorizationRequest(
