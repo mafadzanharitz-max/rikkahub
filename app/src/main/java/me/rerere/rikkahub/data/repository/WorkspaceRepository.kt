@@ -208,6 +208,16 @@ class WorkspaceRepository(
         return true
     }
 
+    /** Recover a local RootFS before any interactive terminal attempts to use it. */
+    suspend fun recoverRootfs(id: String): Boolean {
+        val workspace = dao.getById(id) ?: return false
+        if (!workspace.capabilities().rootfs) return false
+        return withContext(Dispatchers.IO) {
+            rootfsInstaller.recoverBackup(workspace.root)
+            manager.hasRootfs(workspace.root)
+        }
+    }
+
     suspend fun installRootfs(
         id: String,
         url: String,
