@@ -10,6 +10,12 @@ on:
       - '**/*.md'
       - 'docs/**'
   workflow_dispatch:
+    inputs:
+      rootfs_tests_only:
+        description: 'Run RootFS unit tests only; do not compile native components or create an APK'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -129,8 +135,10 @@ jobs:
           }
           JSON
       - name: Build checksum-locked ARMv7 native components
+        if: github.event_name != 'workflow_dispatch' || inputs.rootfs_tests_only != true
         run: python3 scripts/ci/build-native.py
       - name: Configure permanent release signing key
+        if: github.event_name != 'workflow_dispatch' || inputs.rootfs_tests_only != true
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -213,24 +221,31 @@ jobs:
               encoding="utf-8",
           )
           PY
-      - name: Run unit tests and build optimized Release only
+      - name: Run unit tests (RootFS-only mode skips APK creation)
         run: |
-          ./gradlew :app:testGithubDebugUnitTest \
-            :ai:testDebugUnitTest :common:testDebugUnitTest \
-            :document:testDebugUnitTest :material3:testDebugUnitTest \
-            :mediagen:testDebugUnitTest :oauth:testDebugUnitTest \
-            :search:testDebugUnitTest :speech:testDebugUnitTest \
-            :ui:testDebugUnitTest :web:testDebugUnitTest \
-            :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
-            :app:assembleGithubRelease \
-            --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.rootfs_tests_only }}" = "true" ]; then
+            ./gradlew :workspace:testDebugUnitTest \
+              --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+          else
+            ./gradlew :app:testGithubDebugUnitTest \
+              :ai:testDebugUnitTest :common:testDebugUnitTest \
+              :document:testDebugUnitTest :material3:testDebugUnitTest \
+              :mediagen:testDebugUnitTest :oauth:testDebugUnitTest \
+              :search:testDebugUnitTest :speech:testDebugUnitTest \
+              :ui:testDebugUnitTest :web:testDebugUnitTest \
+              :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
+              :app:assembleGithubRelease \
+              --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
+          fi
       - name: Validate actual ARMv7 ELF headers (Release APK)
+        if: github.event_name != 'workflow_dispatch' || inputs.rootfs_tests_only != true
         run: |
           set -euo pipefail
           APK="$(find app/build/outputs/apk/github/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$APK"
           python3 scripts/ci/verify-armv7-elf.py "$APK"
       - name: Verify and report optimized release APK
+        if: github.event_name != 'workflow_dispatch' || inputs.rootfs_tests_only != true
         run: |
           python3 - <<'PY'
           import pathlib, zipfile
