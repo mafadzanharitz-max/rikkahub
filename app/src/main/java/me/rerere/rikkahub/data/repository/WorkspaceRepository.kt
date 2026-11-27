@@ -59,10 +59,15 @@ class WorkspaceRepository(
         for (workspace in workspaces) {
             // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
             if (!workspace.capabilities().localFiles) continue
-            runCatching { rootfsInstaller.recoverBackup(workspace.root) }
-                .onFailure { error ->
-                    Log.e(TAG, "RootFS backup recovery failed: root=${workspace.root}", error)
-                }
+            val recoverySucceeded = try {
+                rootfsInstaller.recoverBackup(workspace.root)
+                true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Log.e(TAG, "RootFS backup recovery failed: root=${workspace.root}", error)
+                false
+            }
             val dir = manager.workspaceDir(workspace.root)
             if (!dir.exists()) {
                 // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
@@ -73,12 +78,28 @@ class WorkspaceRepository(
                 }
                 continue
             }
-            val statusName = workspace.shellStatus
-            if ((statusName == WorkspaceShellStatus.READY.name || statusName == WorkspaceShellStatus.INSTALLING.name) &&
-                !manager.hasRootfs(workspace.root)
-            ) {
-                Log.w(TAG, "Rootfs missing, resetting shell status: id=${workspace.id}")
-                updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
+            if (!recoverySucceeded) {
+                if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
+                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                }
+                continue
+            }
+
+            val hasRootfs = manager.hasRootfs(workspace.root)
+            when (workspace.shellStatus) {
+                WorkspaceShellStatus.INSTALLING.name -> {
+                    // INSTALLING is not durable evidence of a live installer: Android may have
+                    // killed the process before its cancellation/failure handler could run.
+                    updateShellState(
+                        workspace.id,
+                        if (hasRootfs) WorkspaceShellStatus.READY.name
+                        else WorkspaceShellStatus.DISABLED.name,
+                    )
+                }
+                WorkspaceShellStatus.READY.name -> if (!hasRootfs) {
+                    Log.w(TAG, "Rootfs missing, resetting shell status: id=${workspace.id}")
+                    updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
+                }
             }
         }
     }
@@ -213,8 +234,27 @@ class WorkspaceRepository(
         val workspace = dao.getById(id) ?: return false
         if (!workspace.capabilities().rootfs) return false
         return withContext(Dispatchers.IO) {
-            rootfsInstaller.recoverBackup(workspace.root)
-            manager.hasRootfs(workspace.root)
+            try {
+                rootfsInstaller.recoverBackup(workspace.root)
+                val hasRootfs = manager.hasRootfs(workspace.root)
+                val latest = dao.getById(id)
+                if (latest?.shellStatus == WorkspaceShellStatus.INSTALLING.name) {
+                    updateShellState(
+                        id,
+                        if (hasRootfs) WorkspaceShellStatus.READY.name
+                        else WorkspaceShellStatus.DISABLED.name,
+                    )
+                }
+                hasRootfs
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val latest = dao.getById(id)
+                if (latest?.shellStatus == WorkspaceShellStatus.INSTALLING.name) {
+                    updateShellState(id, WorkspaceShellStatus.BROKEN.name)
+                }
+                throw error
+            }
         }
     }
 
