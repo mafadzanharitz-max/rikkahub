@@ -148,7 +148,7 @@ def apply(root):
         val rootPath = root.canonicalFile.toPath()
         val parentPath = (target.parentFile ?: root).canonicalFile.toPath()
         val resolved = if (File(linkName).isAbsolute) {
-            root.resolve(linkName.trimStart('/', '\\\\')).canonicalFile.toPath()
+            root.resolve(linkName.trimStart('/')).canonicalFile.toPath()
         } else {
             File(target.parentFile ?: root, linkName).canonicalFile.toPath()
         }
