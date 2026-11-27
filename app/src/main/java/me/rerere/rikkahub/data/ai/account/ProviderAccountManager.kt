@@ -107,6 +107,8 @@ class ProviderAccountManager(
 
     fun cancelLogin(providerId: Uuid) {
         synchronized(loginLock) {
+            // A UI cancellation must not cancel an explicit sign-out already in progress.
+            if (loginAttempts.isLoggingOut(providerId)) return
             loginAttempts.invalidate(providerId)
             loginJobs.remove(providerId)?.cancel()
             setStatus(providerId, null)
@@ -114,15 +116,17 @@ class ProviderAccountManager(
     }
 
     suspend fun logout(providerId: Uuid) {
-        // Invalidate login first, then serialize logout with refresh-token rotation.
+        // Mark sign-out before waiting for refresh-token rotation. Credential fast paths must
+        // not hand out the old session while the refresh lock is still held by another request.
         val logoutAttempt = synchronized(loginLock) {
-            val attempt = loginAttempts.invalidate(providerId)
+            val attempt = loginAttempts.beginLogout(providerId)
             loginJobs.remove(providerId)?.cancel()
             setStatus(providerId, null)
             attempt
         }
         val refreshLock = refreshLocks.computeIfAbsent(providerId) { Mutex() }
-        refreshLock.withLock {
+        try {
+            refreshLock.withLock {
             var credentialToRevoke: OAuthCredential? = null
             settingsStore.update { old ->
                 synchronized(loginLock) {
@@ -171,6 +175,11 @@ class ProviderAccountManager(
                 }.getOrDefault(false)
                 if (!revoked) Log.w(TAG, "ChatGPT remote session revocation was not confirmed")
             }
+            }
+        } finally {
+            synchronized(loginLock) {
+                loginAttempts.finishLogout(providerId, logoutAttempt)
+            }
         }
     }
 
@@ -182,10 +191,17 @@ class ProviderAccountManager(
         setting: ProviderSetting.Account,
         rejectedAccessToken: String?,
     ): OAuthCredential {
-        // 绝大多数请求的 token 都还有效，直接返回，不用切线程排队拿锁
-        findAccount(setting.id)?.credential
-            ?.takeUnless { it.needsRefresh(rejectedAccessToken) }
-            ?.let { return it }
+        // Linearize the cached-token fast path with logout's generation change. Without this
+        // monitor, logout can begin and wait for refreshLock while this path still returns the
+        // credential that logout is about to revoke.
+        val cached = synchronized(loginLock) {
+            check(!loginAttempts.isLoggingOut(setting.id)) {
+                "${setting.name}: sign-out in progress"
+            }
+            findAccount(setting.id)?.credential
+                ?.takeUnless { it.needsRefresh(rejectedAccessToken) }
+        }
+        cached?.let { return it }
         return appScope.async(Dispatchers.IO) {
             refreshIfNeeded(setting, rejectedAccessToken)
         }.await()
@@ -200,12 +216,29 @@ class ProviderAccountManager(
     ): OAuthCredential {
         val lock = refreshLocks.computeIfAbsent(setting.id) { Mutex() }
         return lock.withLock {
-            // Logout invalidates this generation before waiting for the refresh lock.
+            // Recheck after acquiring the lock: logout may have started while this caller waited.
+            // Keep the cached-token return linearized with logout's marker as well.
+            val cached = synchronized(loginLock) {
+                check(!loginAttempts.isLoggingOut(setting.id)) {
+                    "${setting.name}: sign-out in progress"
+                }
+                val latest = findAccount(setting.id) ?: setting
+                latest.credential?.takeUnless { it.needsRefresh(rejectedAccessToken) }
+            }
+            if (cached != null) return@withLock cached
+
             // Persist a rotated token first (so logout can revoke it), then reject the stale caller.
-            val refreshAttempt = loginAttempts.current(setting.id)
-            val latest = findAccount(setting.id) ?: setting
-            val credential = latest.credential ?: error("${latest.name}: not signed in")
-            if (!credential.needsRefresh(rejectedAccessToken)) return@withLock credential
+            val snapshot = synchronized(loginLock) {
+                check(!loginAttempts.isLoggingOut(setting.id)) {
+                    "${setting.name}: sign-out in progress"
+                }
+                val latest = findAccount(setting.id) ?: setting
+                val credential = latest.credential ?: error("${latest.name}: not signed in")
+                Triple(loginAttempts.current(setting.id), latest, credential)
+            }
+            val refreshAttempt = snapshot.first
+            val latest = snapshot.second
+            val credential = snapshot.third
 
             val refreshToken = credential.refreshToken
                 ?: error("${latest.name}: session expired, please sign in again")
@@ -238,8 +271,12 @@ class ProviderAccountManager(
             if (!replaceCredential(latest.id, expected = credential, credential = refreshed)) {
                 error("${latest.name}: sign-in changed during refresh, please try again")
             }
-            if (!loginAttempts.isCurrent(latest.id, refreshAttempt)) {
-                error("${latest.name}: sign-in changed during refresh, please try again")
+            synchronized(loginLock) {
+                if (loginAttempts.isLoggingOut(latest.id) ||
+                    !loginAttempts.isCurrent(latest.id, refreshAttempt)
+                ) {
+                    error("${latest.name}: sign-in changed during refresh, please try again")
+                }
             }
             refreshed
         }
@@ -434,11 +471,14 @@ fun ProviderSetting.preserveCredential(latest: ProviderSetting): ProviderSetting
 /** Per-provider login generation. A newer login or cancellation invalidates older results. */
 internal class AccountLoginAttemptTracker {
     private val generations = HashMap<Uuid, Long>()
+    private val logoutAttempts = HashMap<Uuid, Long>()
 
     @Synchronized
     fun begin(providerId: Uuid): Long {
         val next = (generations[providerId] ?: 0L) + 1L
         generations[providerId] = next
+        // A fresh login supersedes a logout that has not yet committed its settings mutation.
+        logoutAttempts.remove(providerId)
         return next
     }
 
@@ -447,6 +487,22 @@ internal class AccountLoginAttemptTracker {
         val next = (generations[providerId] ?: 0L) + 1L
         generations[providerId] = next
         return next
+    }
+
+    @Synchronized
+    fun beginLogout(providerId: Uuid): Long {
+        val next = (generations[providerId] ?: 0L) + 1L
+        generations[providerId] = next
+        logoutAttempts[providerId] = next
+        return next
+    }
+
+    @Synchronized
+    fun isLoggingOut(providerId: Uuid): Boolean = providerId in logoutAttempts
+
+    @Synchronized
+    fun finishLogout(providerId: Uuid, attempt: Long) {
+        if (logoutAttempts[providerId] == attempt) logoutAttempts.remove(providerId)
     }
 
     @Synchronized
