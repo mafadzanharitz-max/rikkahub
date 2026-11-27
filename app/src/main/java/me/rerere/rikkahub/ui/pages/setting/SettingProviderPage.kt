@@ -83,6 +83,7 @@ import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Tick02
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.account.ProviderAccountManager
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.components.ui.QRCodeScannerDialog
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.RECOMMENDED_PROVIDERS
@@ -112,6 +113,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val deleteScope = rememberCoroutineScope()
     val accountManager = koinInject<ProviderAccountManager>()
+    val settingsStore = koinInject<SettingsStore>()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var searchQuery by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<ProviderSetting?>(null) }
@@ -263,7 +265,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                 deleteScope.launch {
                     // Revoke account sessions and invalidate an in-flight login before removing the provider.
                     if (target is ProviderSetting.Account) accountManager.logout(target.id)
-                    vm.updateSettings { latest ->
+                    settingsStore.update { latest ->
                         latest.copy(providers = latest.providers.filter { it.id != target.id })
                     }
                     deleteTarget = null
