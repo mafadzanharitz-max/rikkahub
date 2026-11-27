@@ -21,11 +21,16 @@ import kotlin.time.Duration.Companion.seconds
 class MediaGenerationManager(
     client: OkHttpClient = OkHttpClient(),
 ) {
-    private val openAI = OpenAIMediaGenerationProvider(client)
-    private val aliyun = AliyunMediaGenerationProvider(client)
-    private val volcengine = VolcengineMediaGenerationProvider(client)
-    private val miniMax = MiniMaxMediaGenerationProvider(client)
-    private val openRouter = OpenRouterMediaGenerationProvider(client)
+    // Generation providers send API keys and custom auth headers.
+    private val credentialClient = client.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+    private val openAI = OpenAIMediaGenerationProvider(credentialClient)
+    private val aliyun = AliyunMediaGenerationProvider(credentialClient)
+    private val volcengine = VolcengineMediaGenerationProvider(credentialClient)
+    private val miniMax = MiniMaxMediaGenerationProvider(credentialClient)
+    private val openRouter = OpenRouterMediaGenerationProvider(credentialClient)
 
     suspend fun create(
         setting: MediaGenerationProviderSetting,

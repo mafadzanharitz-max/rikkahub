@@ -269,14 +269,15 @@ val dataSourceModule = module {
 
     single<HttpClient> {
         HttpClient(OkHttp) {
+            // S3 signatures and WebDAV credentials must stay bound to their configured origin.
+            followRedirects = false
             engine {
                 config {
                     connectTimeout(20, TimeUnit.SECONDS)
                     readTimeout(10, TimeUnit.MINUTES)
                     writeTimeout(120, TimeUnit.SECONDS)
-                    // Keep the Ktor/OkHttp transport from downgrading credential-bearing requests.
                     followSslRedirects(false)
-                    followRedirects(true)
+                    followRedirects(false)
                     retryOnConnectionFailure(true)
                 }
             }

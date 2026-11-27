@@ -50,10 +50,12 @@ class McpManager(
         .writeTimeout(120, TimeUnit.SECONDS)
         // Never follow HTTPS-to-HTTP redirects: MCP requests may carry credentials.
         .followSslRedirects(false)
-        .followRedirects(true)
+        .followRedirects(false)
         .build()
 
     private val httpClient = HttpClient(OkHttp) {
+        // MCP requests may carry arbitrary user-defined secret headers.
+        followRedirects = false
         engine {
             preconfigured = okHttpClient
         }

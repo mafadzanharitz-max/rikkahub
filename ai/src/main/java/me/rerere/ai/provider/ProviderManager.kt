@@ -18,17 +18,22 @@ class ProviderManager(
     accountCredentials: AccountCredentialProvider,
 ) {
     // 存储已注册的Provider实例
+    // Provider requests carry API keys and user-defined headers; never forward them on redirects.
+    private val credentialClient = client.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
     private val providers = mutableMapOf<String, Provider<*>>()
 
     init {
         ImageEncodeCache.init(context.cacheDir)
 
         // 注册默认Provider
-        registerProvider("openai", OpenAIProvider(client, context))
-        registerProvider("google", GoogleProvider(client, context))
-        registerProvider("claude", ClaudeProvider(client, context))
-        registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials))
-        registerProvider("grok", GrokProvider(client, accountCredentials))
+        registerProvider("openai", OpenAIProvider(credentialClient, context))
+        registerProvider("google", GoogleProvider(credentialClient, context))
+        registerProvider("claude", ClaudeProvider(credentialClient, context))
+        registerProvider("chatgpt", ChatGPTProvider(credentialClient, accountCredentials))
+        registerProvider("grok", GrokProvider(credentialClient, accountCredentials))
     }
 
     /**
