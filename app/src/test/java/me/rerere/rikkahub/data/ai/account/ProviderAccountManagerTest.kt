@@ -36,6 +36,7 @@ import org.junit.rules.Timeout
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class ProviderAccountManagerTest {
     @get:Rule
@@ -49,6 +50,7 @@ class ProviderAccountManagerTest {
 
     // 刷新请求到达令牌端点后卡住，直到测试放行
     private val requestArrived = CountDownLatch(1)
+    private val refreshRequestCount = AtomicInteger()
     private val release = CountDownLatch(1)
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
@@ -73,6 +75,7 @@ class ProviderAccountManagerTest {
                     .body("".toResponseBody("application/json".toMediaType()))
                     .build()
             } else {
+                refreshRequestCount.incrementAndGet()
                 requestArrived.countDown()
                 release.await(10, TimeUnit.SECONDS)
                 Response.Builder()
@@ -202,6 +205,42 @@ class ProviderAccountManagerTest {
         assertTrue(logout.isCancelled)
         assertTrue(refresh.await().isFailure)
         assertNull(store.credential())
+    }
+
+    @Test
+    fun `removed account provider cannot refresh using a stale setting`() = runBlocking {
+        val store = createStore()
+        store.update { settings ->
+            settings.copy(providers = settings.providers.filterNot { it.id == provider.id })
+        }
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        val result = runCatching {
+            manager.getCredential(provider, rejectedAccessToken = null)
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, refreshRequestCount.get())
+    }
+
+    @Test
+    fun `provider changed to api key cannot refresh a stale account setting`() = runBlocking {
+        val store = createStore()
+        store.update { settings ->
+            settings.copy(
+                providers = settings.providers.map {
+                    if (it.id == provider.id) ProviderSetting.OpenAI(id = provider.id) else it
+                }
+            )
+        }
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        val result = runCatching {
+            manager.getCredential(provider, rejectedAccessToken = null)
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, refreshRequestCount.get())
     }
 
     @Test

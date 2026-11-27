@@ -222,7 +222,8 @@ class ProviderAccountManager(
                 check(!loginAttempts.isLoggingOut(setting.id)) {
                     "${setting.name}: sign-out in progress"
                 }
-                val latest = findAccount(setting.id) ?: setting
+                val latest = findAccount(setting.id)
+                    ?: error("${setting.name}: provider is no longer available")
                 latest.credential?.takeUnless { it.needsRefresh(rejectedAccessToken) }
             }
             if (cached != null) return@withLock cached
@@ -232,7 +233,8 @@ class ProviderAccountManager(
                 check(!loginAttempts.isLoggingOut(setting.id)) {
                     "${setting.name}: sign-out in progress"
                 }
-                val latest = findAccount(setting.id) ?: setting
+                val latest = findAccount(setting.id)
+                    ?: error("${setting.name}: provider is no longer available")
                 val credential = latest.credential ?: error("${latest.name}: not signed in")
                 Triple(loginAttempts.current(setting.id), latest, credential)
             }
