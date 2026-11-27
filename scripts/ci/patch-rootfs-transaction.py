@@ -205,15 +205,22 @@ def apply(root: Path) -> None:
 
     @Test
     fun backupRecoveryRestoresRootfsAfterInterruptedActivation() {
+        // Reproduce the exact crash window: old active RootFS has been renamed
+        // to backup, but staged RootFS has not yet been moved into the active path.
         val linux = tmp.newFolder("linux")
-        val backup = tmp.newFolder("backup")
-        File(backup, "bin").mkdirs()
-        File(backup, "bin/sh").writeText("shell")
-        File(backup, "old-rootfs").writeText("old")
+        File(linux, "bin").mkdirs()
+        File(linux, "bin/sh").writeText("original-shell")
+        File(linux, "etc").mkdirs()
+        File(linux, "etc/os-release").writeText("original-rootfs")
+        val backup = File(tmp.root, "backup")
+        assertTrue("Simulated pre-crash rename must succeed", linux.renameTo(backup))
+        assertFalse(linux.exists())
 
+        // A new installer instance represents a fresh process after restart.
         createInstaller().recoverRootfsBackup(linux, backup)
 
-        assertEquals("old", File(linux, "old-rootfs").readText())
+        assertEquals("original-shell", File(linux, "bin/sh").readText())
+        assertEquals("original-rootfs", File(linux, "etc/os-release").readText())
         assertTrue(WorkspaceManager.isUsableRootfs(linux))
         assertFalse(backup.exists())
     }
