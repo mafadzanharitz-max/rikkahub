@@ -524,6 +524,32 @@ def apply(root):
         if tests.count(marker) != 1: raise SystemExit("Archive test insertion point changed")
         tests = tests.replace(marker, replacement_test + marker, 1)
 
+    hardlink_test = '''    @Test
+    fun createHardLinkFallsBackToCopyWhenAndroidDeniesLinkat() {
+        val root = tmp.newFolder("hardlink-root")
+        val source = File(root, "usr/bin/perl")
+        assertTrue(source.parentFile!!.mkdirs())
+        source.writeText("perl-binary")
+        source.setReadable(true, false)
+        source.setExecutable(true, false)
+        val target = File(root, "usr/bin/perl5.38.2")
+
+        createInstaller().createHardLink(root, target, "usr/bin/perl") { _, _ ->
+            throw java.io.IOException("Operation not permitted")
+        }
+
+        assertEquals("perl-binary", target.readText())
+        assertFalse(Files.isSameFile(source.toPath(), target.toPath()))
+        assertTrue(target.canExecute())
+    }
+
+'''
+    if "createHardLinkFallsBackToCopyWhenAndroidDeniesLinkat" not in tests:
+        marker = "    private fun createInstaller()"
+        if tests.count(marker) != 1:
+            raise SystemExit("RootfsInstallerTest insertion point changed")
+        tests = tests.replace(marker, hardlink_test + marker, 1)
+
     if "extractRejectsPathTraversal" not in tests:
         marker = "    private fun createInstaller()"
         if tests.count(marker) != 1: raise SystemExit("Archive test insertion point changed")
