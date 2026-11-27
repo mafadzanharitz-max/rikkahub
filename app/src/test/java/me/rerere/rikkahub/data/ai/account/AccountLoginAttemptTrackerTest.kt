@@ -47,11 +47,29 @@ class AccountLoginAttemptTrackerTest {
         val tracker = AccountLoginAttemptTracker()
         val providerId = Uuid.random()
 
-        val logoutAttempt = tracker.invalidate(providerId)
+        val logoutAttempt = tracker.beginLogout(providerId)
+        assertTrue(tracker.isLoggingOut(providerId))
+
         val loginAttempt = tracker.begin(providerId)
 
         assertFalse(tracker.isCurrent(providerId, logoutAttempt))
         assertTrue(tracker.isCurrent(providerId, loginAttempt))
+        assertFalse(tracker.isLoggingOut(providerId))
+    }
+
+    @Test
+    fun `logout marker is cleared only by its own completion`() {
+        val tracker = AccountLoginAttemptTracker()
+        val providerId = Uuid.random()
+
+        val firstLogout = tracker.beginLogout(providerId)
+        val secondLogout = tracker.beginLogout(providerId)
+
+        tracker.finishLogout(providerId, firstLogout)
+        assertTrue(tracker.isLoggingOut(providerId))
+
+        tracker.finishLogout(providerId, secondLogout)
+        assertFalse(tracker.isLoggingOut(providerId))
     }
 
 }
