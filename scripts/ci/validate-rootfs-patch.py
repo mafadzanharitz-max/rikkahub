@@ -13,7 +13,8 @@ SOURCE_MARKERS = (
     "private fun File.safeResolve(path: String)",
     "root.resolve(linkName.trimStart('/')).canonicalFile.toPath()",
     "Files.isSymbolicLink(target.toPath())",
-    "Files.createLink(target.toPath(), source.toPath())",
+    "Files.createLink(link, existing)",
+    "source.copyTo(target, overwrite = true)",
     "MAX_COMPRESSED_ARCHIVE_BYTES",
     "MAX_EXPANDED_ARCHIVE_BYTES",
     "MAX_ARCHIVE_ENTRIES",
@@ -28,6 +29,7 @@ TEST_MARKERS = (
     "extractRejectsOversizedMetadataEntry",
     "extractRejectsMalformedPaxRecordLength",
     "extractUsesUtf8ByteLengthsForMultiplePaxRecords",
+    "createHardLinkFallsBackToCopyWhenAndroidDeniesLinkat",
 )
 FORBIDDEN_SOURCE_MARKERS = ("root.resolve(linkName.trimStart('/',",)
 
