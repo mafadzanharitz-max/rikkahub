@@ -36,8 +36,8 @@ class AccountLoginAttemptTrackerTest {
         val tracker = AccountLoginAttemptTracker()
         val firstProvider = Uuid.random()
         val secondProvider = Uuid.random()
-        val first = tracker.begin(firstProvider)
-        val second = tracker.begin(secondProvider)
+        val first = tracker.begin(firstProvider)!!
+        val second = tracker.begin(secondProvider)!!
 
         tracker.invalidate(firstProvider)
 
@@ -45,17 +45,19 @@ class AccountLoginAttemptTrackerTest {
         assertTrue(tracker.isCurrent(secondProvider, second))
     }
     @Test
-    fun `new login supersedes a pending logout mutation`() {
+    fun `new login is blocked until pending logout completes`() {
         val tracker = AccountLoginAttemptTracker()
         val providerId = Uuid.random()
 
         val logoutAttempt = tracker.beginLogout(providerId)
         assertTrue(tracker.isLoggingOut(providerId))
+        assertNull(tracker.begin(providerId))
+        assertTrue(tracker.isCurrent(providerId, logoutAttempt))
 
-        val loginAttempt = tracker.begin(providerId)!!
-
-        assertFalse(tracker.isCurrent(providerId, logoutAttempt))
-        assertTrue(tracker.isCurrent(providerId, loginAttempt))
+        tracker.finishLogout(providerId, logoutAttempt)
+        val loginAttempt = tracker.begin(providerId)
+        assertNotNull(loginAttempt)
+        assertTrue(tracker.isCurrent(providerId, loginAttempt!!))
         assertFalse(tracker.isLoggingOut(providerId))
     }
 
