@@ -153,7 +153,8 @@ class ProviderAccountManager(
                     }
                 }
                 if (!remoteRevocationConfirmed) {
-                    Log.w(TAG, "Remote account session revocation was not confirmed")
+                    // Android's Log is not available in local JVM tests; UI reports this condition too.
+                    runCatching { Log.w(TAG, "Remote account session revocation was not confirmed") }
                 }
 
                 // Keep the credential persisted until remote revocation has been attempted.
