@@ -1201,6 +1201,8 @@
   <string name="workspace_detail_empty_directory">Empty directory</string>
   <string name="workspace_detail_shell_disabled">Disabled</string>
   <string name="workspace_detail_shell_installing">Installing</string>
+  <string name="workspace_detail_shell_interrupted">Interrupted</string>
+  <string name="workspace_detail_retry_rootfs">Retry Rootfs Installation</string>
   <string name="workspace_detail_shell_ready">Ready</string>
   <string name="workspace_detail_shell_broken">Error</string>
   <string name="workspace_detail_downloading">Downloading %1$s%2$s</string>

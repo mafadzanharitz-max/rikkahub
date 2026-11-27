@@ -55,6 +55,7 @@ data class WorkspaceCapabilities(
 enum class WorkspaceShellStatus {
     DISABLED,
     INSTALLING,
+    INTERRUPTED,
     READY,
     BROKEN,
 }

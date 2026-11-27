@@ -328,6 +328,7 @@ class WorkspaceDetailVM(
                 loadWorkspace()
                 refresh()
             } catch (e: CancellationException) {
+                withContext(kotlinx.coroutines.NonCancellable) { loadWorkspace() }
                 throw e
             } catch (error: Throwable) {
                 _installError.value = error.message ?: "Rootfs 安装失败"
@@ -336,6 +337,10 @@ class WorkspaceDetailVM(
                 _installProgress.value = null
             }
         }
+    }
+
+    fun cancelRootfsInstall() {
+        installJob?.takeIf { it.isActive }?.cancel()
     }
 
     fun dismissInstallError() {
@@ -393,7 +398,10 @@ class WorkspaceDetailVM(
             // block never runs. Recover it when the workspace detail screen is opened; the
             // repository-wide integrity check is not guaranteed to run on this navigation path.
             if (workspace?.capabilities()?.rootfs == true &&
-                workspace.shellStatus == WorkspaceShellStatus.INSTALLING.name
+                workspace.shellStatus in setOf(
+                    WorkspaceShellStatus.INSTALLING.name,
+                    WorkspaceShellStatus.INTERRUPTED.name,
+                )
             ) {
                 try {
                     repository.recoverRootfs(id)

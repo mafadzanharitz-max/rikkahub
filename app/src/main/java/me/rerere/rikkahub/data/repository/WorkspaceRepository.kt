@@ -92,13 +92,16 @@ class WorkspaceRepository(
                     // killed the process before its cancellation/failure handler could run.
                     updateShellState(
                         workspace.id,
-                        if (hasRootfs) WorkspaceShellStatus.READY.name
+                        if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name
                         else WorkspaceShellStatus.BROKEN.name,
                     )
                 }
                 WorkspaceShellStatus.READY.name -> if (!hasRootfs) {
-                    Log.w(TAG, "Rootfs missing, resetting shell status: id=${workspace.id}")
-                    updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
+                    Log.w(TAG, "Rootfs missing, marking shell as broken: id=${workspace.id}")
+                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                }
+                WorkspaceShellStatus.INTERRUPTED.name -> if (!hasRootfs) {
+                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
                 }
             }
         }
@@ -241,9 +244,11 @@ class WorkspaceRepository(
                 if (latest?.shellStatus == WorkspaceShellStatus.INSTALLING.name) {
                     updateShellState(
                         id,
-                        if (hasRootfs) WorkspaceShellStatus.READY.name
+                        if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name
                         else WorkspaceShellStatus.BROKEN.name,
                     )
+                } else if (latest?.shellStatus == WorkspaceShellStatus.INTERRUPTED.name && !hasRootfs) {
+                    updateShellState(id, WorkspaceShellStatus.BROKEN.name)
                 }
                 hasRootfs
             } catch (error: CancellationException) {
@@ -275,12 +280,12 @@ class WorkspaceRepository(
             return true
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
-                restoreShellState(workspace)
+                updateShellState(workspace.id, WorkspaceShellStatus.INTERRUPTED.name)
             }
             throw e
         } catch (e: InterruptedException) {
             withContext(NonCancellable) {
-                restoreShellState(workspace)
+                updateShellState(workspace.id, WorkspaceShellStatus.INTERRUPTED.name)
             }
             throw CancellationException("Rootfs install cancelled").also { it.initCause(e) }
         } catch (e: Throwable) {
@@ -623,10 +628,6 @@ class WorkspaceRepository(
             val workspace = dao.getById(id) ?: error("Workspace not found: $id")
             block(backendOf(workspace))
         }
-
-    private suspend fun restoreShellState(workspace: WorkspaceEntity) {
-        updateShellState(workspace.id, workspace.shellStatus)
-    }
 
     private suspend fun updateShellState(
         workspace: WorkspaceEntity,

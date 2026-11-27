@@ -34,20 +34,38 @@ TEST_MARKERS = (
 FORBIDDEN_SOURCE_MARKERS = ("root.resolve(linkName.trimStart('/',",)
 
 def main() -> int:
-    missing = [str(path) for path in (INSTALLER, TESTS) if not path.is_file()]
+    app_repository = Path("app/src/main/java/me/rerere/rikkahub/data/repository/WorkspaceRepository.kt")
+    detail_vm = Path("app/src/main/java/me/rerere/rikkahub/ui/pages/extensions/workspace/WorkspaceDetailVM.kt")
+    detail_page = Path("app/src/main/java/me/rerere/rikkahub/ui/pages/extensions/workspace/WorkspaceDetailPage.kt")
+    workspace_model = Path("workspace/src/main/java/me/rerere/workspace/Workspace.kt")
+    required_app_files = (app_repository, detail_vm, detail_page, workspace_model)
+    missing = [str(path) for path in (INSTALLER, TESTS, *required_app_files) if not path.is_file()]
     if missing:
         print("Missing generated RootFS files: " + ", ".join(missing), file=sys.stderr)
         return 1
     source = INSTALLER.read_text(encoding="utf-8")
     tests = TESTS.read_text(encoding="utf-8")
+    repository = app_repository.read_text(encoding="utf-8")
+    view_model = detail_vm.read_text(encoding="utf-8")
+    page = detail_page.read_text(encoding="utf-8")
+    model = workspace_model.read_text(encoding="utf-8")
     absent_source = [item for item in SOURCE_MARKERS if item not in source]
     absent_tests = [item for item in TEST_MARKERS if item not in tests]
     forbidden = [item for item in FORBIDDEN_SOURCE_MARKERS if item in source]
-    if absent_source or absent_tests or forbidden:
+    lifecycle_markers = {
+        "persist interrupted status after cancellation": "WorkspaceShellStatus.INTERRUPTED.name" in repository,
+        "recover interrupted operation without promoting it to Ready": "if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name" in repository,
+        "cancel action reaches the active install job": "fun cancelRootfsInstall()" in view_model and "onCancelInstall = vm::cancelRootfsInstall" in page,
+        "interrupted state is represented in the workspace model": "    INTERRUPTED," in model,
+        "interrupted status has a visible label": "WorkspaceShellStatus.INTERRUPTED.name -> stringResource(R.string.workspace_detail_shell_interrupted)" in page,
+    }
+    missing_lifecycle = [name for name, present in lifecycle_markers.items() if not present]
+    if absent_source or absent_tests or forbidden or missing_lifecycle:
         for title, items in (
             ("Missing generated Kotlin source invariants", absent_source),
             ("Missing RootFS regression tests", absent_tests),
             ("Forbidden malformed Kotlin escape patterns", forbidden),
+            ("Missing RootFS lifecycle safeguards", missing_lifecycle),
         ):
             if items:
                 print(title + ":", *items, sep="\\n- ", file=sys.stderr)

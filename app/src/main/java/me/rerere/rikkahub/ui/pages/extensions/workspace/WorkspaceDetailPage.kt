@@ -255,6 +255,7 @@ fun WorkspaceDetailPage(id: String) {
                         workspace = state.workspace,
                         installProgress = installProgress,
                         onInstallRootfs = { showInstallDialog = true },
+                        onCancelInstall = vm::cancelRootfsInstall,
                         onToolApprovalChange = vm::setToolApproval,
                         onShellCompatibilityModeChange = vm::setShellCompatibilityMode,
                         onStorageMountsChange = vm::setStorageMounts,
@@ -415,6 +416,7 @@ private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
+    onCancelInstall: () -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
     onShellCompatibilityModeChange: (Boolean) -> Unit,
     onStorageMountsChange: (List<WorkspaceStorageMount>) -> Unit,
@@ -429,6 +431,9 @@ private fun WorkspaceBasicPage(
     val installButtonText = when {
         installing -> stringResource(R.string.workspace_detail_installing)
         rootfsReady -> stringResource(R.string.workspace_detail_reinstall_rootfs)
+        shellStatus == WorkspaceShellStatus.BROKEN.name ||
+            shellStatus == WorkspaceShellStatus.INTERRUPTED.name ->
+            stringResource(R.string.workspace_detail_retry_rootfs)
         else -> stringResource(R.string.workspace_detail_install_rootfs)
     }
 
@@ -486,7 +491,15 @@ private fun WorkspaceBasicPage(
                             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
                             Text(installButtonText)
                         }
-                        installProgress?.let { RootfsProgress(it) }
+                        installProgress?.let { progress ->
+                            RootfsProgress(progress)
+                            TextButton(
+                                onClick = onCancelInstall,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.common_cancel))
+                            }
+                        }
                     }
                     switchItem(
                         checked = workspace?.shellCompatibilityMode ?: false,
@@ -569,7 +582,8 @@ private fun ShellStatusBadge(status: String?) {
     val colorScheme = MaterialTheme.colorScheme
     val (containerColor, contentColor) = when (status) {
         WorkspaceShellStatus.READY.name -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
-        WorkspaceShellStatus.BROKEN.name -> colorScheme.errorContainer to colorScheme.onErrorContainer
+        WorkspaceShellStatus.BROKEN.name,
+        WorkspaceShellStatus.INTERRUPTED.name -> colorScheme.errorContainer to colorScheme.onErrorContainer
         else -> colorScheme.secondaryContainer to colorScheme.onSecondaryContainer
     }
     Surface(
@@ -1216,6 +1230,7 @@ internal fun WorkspaceEntity.statusLabel(): String =
 internal fun String.toShellStatusLabel(): String = when (this) {
     WorkspaceShellStatus.DISABLED.name -> stringResource(R.string.workspace_detail_shell_disabled)
     WorkspaceShellStatus.INSTALLING.name -> stringResource(R.string.workspace_detail_shell_installing)
+    WorkspaceShellStatus.INTERRUPTED.name -> stringResource(R.string.workspace_detail_shell_interrupted)
     WorkspaceShellStatus.READY.name -> stringResource(R.string.workspace_detail_shell_ready)
     WorkspaceShellStatus.BROKEN.name -> stringResource(R.string.workspace_detail_shell_broken)
     else -> lowercase()
