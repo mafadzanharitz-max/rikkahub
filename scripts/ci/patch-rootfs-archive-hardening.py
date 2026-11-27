@@ -178,7 +178,14 @@ def apply(root):
     a = s.find("    private fun createHardLink(")
     b = s.find("    private fun InputStream.readTarHeader(", a)
     if a < 0 or b < 0: raise SystemExit("Hardlink helper boundaries changed")
-    s = s[:a] + '''    private fun createHardLink(root: File, target: File, linkName: String) {
+    s = s[:a] + '''    internal fun createHardLink(
+        root: File,
+        target: File,
+        linkName: String,
+        createLink: (java.nio.file.Path, java.nio.file.Path) -> java.nio.file.Path = { link, existing ->
+            Files.createLink(link, existing)
+        },
+    ) {
         require(linkName.isNotBlank()) { "RootFS hardlink target is empty" }
         val source = root.safeResolve(linkName)
         require(source.isFile && !Files.isSymbolicLink(source.toPath())) {
@@ -190,8 +197,24 @@ def apply(root):
         if (target.exists()) {
             require(target.delete()) { "Unable to replace existing RootFS hardlink entry" }
         }
-        // Do not fall back to copying: that would duplicate unaccounted storage.
-        Files.createLink(target.toPath(), source.toPath())
+        try {
+            createLink(target.toPath(), source.toPath())
+        } catch (failure: Throwable) {
+            if (failure !is IOException &&
+                failure !is UnsupportedOperationException &&
+                failure !is SecurityException
+            ) {
+                throw failure
+            }
+            // Some Android app-data SELinux policies reject linkat(). Materialize
+            // the archive hardlink as an independent file when the host forbids it.
+            if (target.exists() || Files.isSymbolicLink(target.toPath())) throw failure
+            source.copyTo(target, overwrite = true)
+            target.setReadable(source.canRead(), false)
+            target.setWritable(source.canWrite(), true)
+            target.setExecutable(source.canExecute(), false)
+            target.setLastModified(source.lastModified())
+        }
     }
 
 ''' + s[b:]
@@ -226,6 +249,27 @@ def apply(root):
     }
 
 ''' + s[b:]
+
+    s = once(s, '                    TarEntryType.HARDLINK -> createHardLink(targetDir, target, header.linkName)\n',
+'''                    TarEntryType.HARDLINK -> {
+                        val source = targetDir.safeResolve(header.linkName)
+                        require(source.isFile && !Files.isSymbolicLink(source.toPath())) {
+                            "RootFS hardlink source must be an existing regular file"
+                        }
+                        val linkBytes = source.length()
+                        require(linkBytes <= MAX_INDIVIDUAL_FILE_BYTES) {
+                            "RootFS hardlink exceeds the individual file size limit"
+                        }
+                        require(extractedBytes <= MAX_EXTRACTED_FILE_BYTES - linkBytes) {
+                            "RootFS hardlinks exceed the extracted size limit"
+                        }
+                        require(targetDir.usableSpace >= linkBytes + MIN_FREE_SPACE_BYTES) {
+                            "Insufficient storage space to materialize RootFS hardlink"
+                        }
+                        extractedBytes += linkBytes
+                        createHardLink(targetDir, target, header.linkName)
+                    }
+''', "hardlink extraction budget")
 
     s = once(s, '                    TarEntryType.FILE -> {\n                        target.outputStream().use { output ->',
 '''                    TarEntryType.FILE -> {
