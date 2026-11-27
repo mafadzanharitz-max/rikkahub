@@ -201,6 +201,10 @@ jobs:
         run: |
           ./gradlew :app:testGithubDebugUnitTest \
             :ai:testDebugUnitTest :common:testDebugUnitTest \
+            :document:testDebugUnitTest :material3:testDebugUnitTest \
+            :mediagen:testDebugUnitTest :oauth:testDebugUnitTest \
+            :search:testDebugUnitTest :speech:testDebugUnitTest \
+            :ui:testDebugUnitTest :web:testDebugUnitTest \
             :workspace:testDebugUnitTest :terminal:testDebugUnitTest \
             :app:assembleGithubRelease \
             --stacktrace --build-cache --max-workers=2 -Dorg.gradle.jvmargs=-Xmx4g
