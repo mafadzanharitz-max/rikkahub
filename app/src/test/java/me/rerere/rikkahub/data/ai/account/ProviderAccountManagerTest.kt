@@ -184,6 +184,27 @@ class ProviderAccountManagerTest {
     }
 
     @Test
+    fun `logout completes after its caller is cancelled while waiting for refresh`() = runBlocking {
+        val store = createStore()
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        val refresh = async(Dispatchers.Default) {
+            runCatching { manager.getCredential(provider, rejectedAccessToken = null) }
+        }
+        assertTrue(withContext(Dispatchers.IO) { requestArrived.await(10, TimeUnit.SECONDS) })
+
+        // Logout has marked the session and is suspended behind the in-flight refresh.
+        val logout = async(start = CoroutineStart.UNDISPATCHED) { manager.logout(provider.id) }
+        logout.cancel()
+        release.countDown()
+        logout.join()
+
+        assertTrue(logout.isCancelled)
+        assertTrue(refresh.await().isFailure)
+        assertNull(store.credential())
+    }
+
+    @Test
     fun `refresh result is dropped if the user signs out meanwhile`() = runBlocking {
         val store = createStore()
         val manager = ProviderAccountManager(store, appScope, client)

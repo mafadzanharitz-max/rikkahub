@@ -115,7 +115,7 @@ class ProviderAccountManager(
         }
     }
 
-    suspend fun logout(providerId: Uuid) {
+    suspend fun logout(providerId: Uuid) = withContext(NonCancellable) {
         // Mark sign-out before waiting for refresh-token rotation. Credential fast paths must
         // not hand out the old session while the refresh lock is still held by another request.
         val logoutAttempt = synchronized(loginLock) {
