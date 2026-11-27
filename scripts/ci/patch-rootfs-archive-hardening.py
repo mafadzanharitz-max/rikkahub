@@ -6,11 +6,19 @@ INSTALLER = Path("workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt
 TESTS = Path("workspace/src/test/java/me/rerere/workspace/RootfsInstallerTest.kt")
 
 def once(s, old, new, label):
-    n = s.count(old)
-    if n == 0 and new in s:
-        return s
-    if n != 1:
-        raise SystemExit(f"{label}: expected one target, found {n}")
+    old_count = s.count(old)
+    new_count = s.count(new)
+    if new_count:
+        if old_count == 0:
+            return s
+        if old_count == 1:
+            old_index = s.find(old)
+            new_index = s.find(new)
+            if new_index <= old_index < new_index + len(new):
+                return s
+        raise SystemExit(f"{label}: patched and unpatched targets both present")
+    if old_count != 1:
+        raise SystemExit(f"{label}: expected one target, found {old_count}")
     return s.replace(old, new, 1)
 
 def apply(root):

@@ -77,6 +77,7 @@ jobs:
       - name: Validate generated RootFS patch and patch idempotency
         run: |
           set -euo pipefail
+          python3 -m unittest discover -s scripts/ci -p 'test_patch_rootfs_archive_hardening.py' -v
           python3 -m py_compile scripts/ci/*.py
           INSTALLER="workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt"
           TESTS="workspace/src/test/java/me/rerere/workspace/RootfsInstallerTest.kt"
