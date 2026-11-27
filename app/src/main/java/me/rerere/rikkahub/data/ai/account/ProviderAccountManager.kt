@@ -198,8 +198,11 @@ class ProviderAccountManager(
             check(!loginAttempts.isLoggingOut(setting.id)) {
                 "${setting.name}: sign-out in progress"
             }
-            findAccount(setting.id)?.credential
-                ?.takeUnless { it.needsRefresh(rejectedAccessToken) }
+            val current = findAccount(setting.id)
+            check(current != null && current::class == setting::class) {
+                "${setting.name}: provider is no longer available or has changed"
+            }
+            current.credential?.takeUnless { it.needsRefresh(rejectedAccessToken) }
         }
         cached?.let { return it }
         return appScope.async(Dispatchers.IO) {
@@ -223,7 +226,8 @@ class ProviderAccountManager(
                     "${setting.name}: sign-out in progress"
                 }
                 val latest = findAccount(setting.id)
-                    ?: error("${setting.name}: provider is no longer available")
+                    ?.takeIf { it::class == setting::class }
+                    ?: error("${setting.name}: provider is no longer available or has changed")
                 latest.credential?.takeUnless { it.needsRefresh(rejectedAccessToken) }
             }
             if (cached != null) return@withLock cached
@@ -234,7 +238,8 @@ class ProviderAccountManager(
                     "${setting.name}: sign-out in progress"
                 }
                 val latest = findAccount(setting.id)
-                    ?: error("${setting.name}: provider is no longer available")
+                    ?.takeIf { it::class == setting::class }
+                    ?: error("${setting.name}: provider is no longer available or has changed")
                 val credential = latest.credential ?: error("${latest.name}: not signed in")
                 Triple(loginAttempts.current(setting.id), latest, credential)
             }
@@ -271,7 +276,7 @@ class ProviderAccountManager(
                 )
             }
             // 刷新期间用户可能退出或换了账号，这时结果作废，不能把旧会话写回去
-            if (!replaceCredential(latest.id, expected = credential, credential = refreshed)) {
+            if (!replaceCredential(latest, expected = credential, credential = refreshed)) {
                 error("${latest.name}: sign-in changed during refresh, please try again")
             }
             synchronized(loginLock) {
@@ -422,7 +427,7 @@ class ProviderAccountManager(
 
     /** 设置里的凭据仍是 [expected] 时才替换，返回是否替换了 */
     private suspend fun replaceCredential(
-        providerId: Uuid,
+        expectedProvider: ProviderSetting.Account,
         expected: OAuthCredential,
         credential: OAuthCredential,
     ): Boolean {
@@ -430,8 +435,8 @@ class ProviderAccountManager(
         settingsStore.update { old ->
             old.copy(
                 providers = old.providers.map { provider ->
-                    if (provider.id == providerId && provider is ProviderSetting.Account &&
-                        provider.credential == expected) {
+                    if (provider.id == expectedProvider.id && provider is ProviderSetting.Account &&
+                        provider::class == expectedProvider::class && provider.credential == expected) {
                         replaced = true
                         provider.withCredential(credential)
                     } else {

@@ -244,6 +244,54 @@ class ProviderAccountManagerTest {
     }
 
     @Test
+    fun `stale chatgpt setting cannot receive grok credentials for the same id`() = runBlocking {
+        val grokCredential = OAuthCredential(
+            accessToken = "grok-access",
+            refreshToken = "grok-refresh",
+            expiresAt = System.currentTimeMillis() + 60 * 60 * 1000L,
+        )
+        val store = createStore(
+            ProviderSetting.Grok(id = provider.id, credential = grokCredential)
+        )
+        val manager = ProviderAccountManager(store, appScope, client)
+
+        val result = runCatching {
+            manager.getCredential(provider, rejectedAccessToken = null)
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, refreshRequestCount.get())
+    }
+
+    @Test
+    fun `in flight chatgpt refresh cannot replace credentials after account type changes`() = runBlocking {
+        val store = createStore()
+        val manager = ProviderAccountManager(store, appScope, client)
+        val refresh = async(Dispatchers.Default) {
+            runCatching { manager.getCredential(provider, rejectedAccessToken = null) }
+        }
+        assertTrue(withContext(Dispatchers.IO) { requestArrived.await(10, TimeUnit.SECONDS) })
+
+        val originalCredential = provider.credential!!
+        store.update { settings ->
+            settings.copy(
+                providers = settings.providers.map {
+                    if (it.id == provider.id) {
+                        ProviderSetting.Grok(id = provider.id, credential = originalCredential)
+                    } else it
+                }
+            )
+        }
+        release.countDown()
+
+        assertTrue(refresh.await().isFailure)
+        val current = store.settingsFlow.value.providers.find { it.id == provider.id }
+        assertTrue(current is ProviderSetting.Grok)
+        assertEquals(originalCredential, (current as ProviderSetting.Grok).credential)
+        assertEquals("old-access", current.credential?.accessToken)
+    }
+
+    @Test
     fun `refresh result is dropped if the user signs out meanwhile`() = runBlocking {
         val store = createStore()
         val manager = ProviderAccountManager(store, appScope, client)
