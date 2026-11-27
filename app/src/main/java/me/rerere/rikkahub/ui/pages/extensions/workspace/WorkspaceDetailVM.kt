@@ -130,7 +130,7 @@ class WorkspaceDetailVM(
     }
 
     init {
-        loadWorkspace()
+        viewModelScope.launch { loadWorkspace() }
         refresh()
     }
 
@@ -166,6 +166,7 @@ class WorkspaceDetailVM(
     }
 
     private var refreshJob: Job? = null
+    private var installJob: Job? = null
 
     fun refresh() {
         // 远程工作区列目录要走网络, 快速切换目录时旧请求可能晚到, 只保留最新一次
@@ -312,10 +313,12 @@ class WorkspaceDetailVM(
     }
 
     fun installRootfs(url: String) {
-        viewModelScope.launch {
-            _installError.value = null
-            val workspace = state.value.workspace ?: return@launch
-            _installProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
+        if (installJob?.isActive == true) return
+        val workspace = state.value.workspace ?: return
+        _installError.value = null
+        // Publish the live operation before launching so rapid taps cannot enqueue duplicates.
+        _installProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
+        installJob = viewModelScope.launch {
             try {
                 terminalSessionManager.closeWorkspace(workspace.root)
                 backgroundShellManager.killWorkspace(workspace.id)
@@ -328,6 +331,7 @@ class WorkspaceDetailVM(
                 throw e
             } catch (error: Throwable) {
                 _installError.value = error.message ?: "Rootfs 安装失败"
+                loadWorkspace()
             } finally {
                 _installProgress.value = null
             }
@@ -383,8 +387,7 @@ class WorkspaceDetailVM(
         _terminalState.update { it.copy(history = emptyList()) }
     }
 
-    private fun loadWorkspace() {
-        viewModelScope.launch {
+    private suspend fun loadWorkspace() {
             var workspace = repository.getById(id)
             // A force-stopped install leaves INSTALLING in the database because its finally/catch
             // block never runs. Recover it when the workspace detail screen is opened; the
@@ -403,7 +406,6 @@ class WorkspaceDetailVM(
             }
             val layout = repository.layout(id)
             _state.update { it.copy(workspace = workspace, layout = layout) }
-        }
     }
 }
 

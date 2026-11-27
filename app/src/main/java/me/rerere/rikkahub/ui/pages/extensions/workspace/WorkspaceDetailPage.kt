@@ -423,7 +423,8 @@ private fun WorkspaceBasicPage(
     val shellStatus = workspace?.shellStatus
     // 加载完成前按本地工作区展示
     val hasRootfs = workspace?.capabilities()?.rootfs ?: true
-    val installing = installProgress != null || shellStatus == WorkspaceShellStatus.INSTALLING.name
+    // Persisted INSTALLING can survive process death; only live progress disables the action.
+    val installing = installProgress != null
     val rootfsReady = shellStatus == WorkspaceShellStatus.READY.name
     val installButtonText = when {
         installing -> stringResource(R.string.workspace_detail_installing)

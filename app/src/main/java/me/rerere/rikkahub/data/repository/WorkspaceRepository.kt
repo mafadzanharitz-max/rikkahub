@@ -93,7 +93,7 @@ class WorkspaceRepository(
                     updateShellState(
                         workspace.id,
                         if (hasRootfs) WorkspaceShellStatus.READY.name
-                        else WorkspaceShellStatus.DISABLED.name,
+                        else WorkspaceShellStatus.BROKEN.name,
                     )
                 }
                 WorkspaceShellStatus.READY.name -> if (!hasRootfs) {
@@ -242,7 +242,7 @@ class WorkspaceRepository(
                     updateShellState(
                         id,
                         if (hasRootfs) WorkspaceShellStatus.READY.name
-                        else WorkspaceShellStatus.DISABLED.name,
+                        else WorkspaceShellStatus.BROKEN.name,
                     )
                 }
                 hasRootfs
