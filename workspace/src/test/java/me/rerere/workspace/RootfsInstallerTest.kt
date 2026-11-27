@@ -75,6 +75,43 @@ class RootfsInstallerTest {
         assertEquals("/bin/bash", WorkspaceManager.rootfsShell(target))
     }
 
+    @Test
+    fun cleanupPreservesRootfsBackupAndRemovesOtherTemporaryData() {
+        val manager = WorkspaceManager(tmp.newFolder("workspace-base"))
+        val root = "local"
+        manager.ensureWorkspace(root)
+        val temp = manager.tempDir(root)
+        val backup = File(temp, "rootfs-backup").apply { mkdirs() }
+        File(backup, "marker").writeText("preserve")
+        val staging = File(temp, "rootfs-staging").apply { mkdirs() }
+        File(staging, "partial").writeText("discard")
+        val archive = File(temp, "rootfs.tar.gz").apply { writeText("partial") }
+        val rootfsTmp = File(manager.linuxDir(root), "tmp").apply { mkdirs() }
+        File(rootfsTmp, "stale").writeText("discard")
+
+        manager.cleanupAllTempDirs()
+
+        assertEquals("preserve", File(backup, "marker").readText())
+        assertFalse(staging.exists())
+        assertFalse(archive.exists())
+        assertFalse(rootfsTmp.exists())
+    }
+
+    @Test
+    fun recoverBackupRestoresInterruptedRootfsForWorkspace() {
+        val manager = WorkspaceManager(tmp.newFolder("recovery-base"))
+        val root = "local"
+        manager.ensureWorkspace(root)
+        val backup = File(manager.tempDir(root), "rootfs-backup").apply { mkdirs() }
+        File(backup, "bin").mkdirs()
+        File(backup, "bin/sh").writeText("shell")
+
+        RootfsInstaller(manager).recoverBackup(root)
+
+        assertTrue(manager.hasRootfs(root))
+        assertFalse(backup.exists())
+    }
+
     private fun createInstaller() = RootfsInstaller(WorkspaceManager(tmp.newFolder()))
 
     private fun OutputStream.writeTarEntry(name: String, type: Char, data: ByteArray, linkName: String = "") {

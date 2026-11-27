@@ -6,6 +6,7 @@ import java.io.OutputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.ConcurrentHashMap
 
 class WorkspaceManager(
     private val baseDir: File,
@@ -14,6 +15,14 @@ class WorkspaceManager(
     private val bindMounts: List<WorkspaceBindMount> = emptyList(),
 ) {
     private val fileSystem = WorkspaceFileSystem(config)
+    private val rootfsLocks = ConcurrentHashMap<String, Any>()
+
+    /** Serialize installer activation, recovery, startup cleanup and workspace deletion per root. */
+    fun <T> withRootfsLock(root: String, block: () -> T): T {
+        val key = workspaceDir(root).absolutePath
+        val lock = rootfsLocks.computeIfAbsent(key) { Any() }
+        return synchronized(lock, block)
+    }
 
     init {
         baseDir.mkdirs()
@@ -77,7 +86,9 @@ class WorkspaceManager(
 
     fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
 
-    fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
+    fun deleteWorkspace(root: String): Boolean = withRootfsLock(root) {
+        workspaceDir(root).deleteRecursively()
+    }
 
     fun listFiles(
         root: String,
@@ -289,7 +300,7 @@ class WorkspaceManager(
     }
 
     /** 交互式终端启动前的准备: 补齐目录, 并按当前网络刷新 Rootfs 的 DNS 等配置 */
-    fun prepareTerminal(root: String, nameservers: List<String>) {
+    fun prepareTerminal(root: String, nameservers: List<String>) = withRootfsLock(root) {
         ensureWorkspace(root)
         bindMounts.forEach { it.source.mkdirs() }
         RootfsPatcher().patch(linuxDir(root), RootfsPatchOptions(nameservers = nameservers))
@@ -299,9 +310,9 @@ class WorkspaceManager(
         root: String,
         shellCompatibilityMode: Boolean,
         extraMounts: List<WorkspaceBindMount> = emptyList(),
-    ): WorkspaceTerminalLaunch? {
+    ): WorkspaceTerminalLaunch? = withRootfsLock(root) {
         requireMountsAvailable(extraMounts)
-        return shellRunner.terminalLaunch(
+        shellRunner.terminalLaunch(
             WorkspaceTerminalContext(
                 filesDir = filesDir(root),
                 linuxDir = linuxDir(root),
@@ -328,11 +339,14 @@ class WorkspaceManager(
         for (dir in roots) {
             val root = dir.name
             if (!root.matches(ROOT_NAME_REGEX)) continue
-            // PRoot temp files
-            tempDir(root).let { if (it.exists()) it.deleteRecursively() }
-            // Rootfs /tmp and /var/tmp
-            File(linuxDir(root), "tmp").let { if (it.exists()) it.deleteRecursively() }
-            File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+            withRootfsLock(root) {
+                // Keep the transactional backup intact until RootfsInstaller recovery has inspected it.
+                val temp = tempDir(root)
+                temp.listFiles()?.filterNot { it.name == "rootfs-backup" }?.forEach { it.deleteRecursively() }
+                // Rootfs /tmp and /var/tmp
+                File(linuxDir(root), "tmp").let { if (it.exists()) it.deleteRecursively() }
+                File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+            }
         }
     }
 

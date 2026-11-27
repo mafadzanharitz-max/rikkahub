@@ -59,6 +59,10 @@ class WorkspaceRepository(
         for (workspace in workspaces) {
             // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
             if (!workspace.capabilities().localFiles) continue
+            runCatching { rootfsInstaller.recoverBackup(workspace.root) }
+                .onFailure { error ->
+                    Log.e(TAG, "RootFS backup recovery failed: root=${workspace.root}", error)
+                }
             val dir = manager.workspaceDir(workspace.root)
             if (!dir.exists()) {
                 // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
