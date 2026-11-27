@@ -288,7 +288,7 @@ class ProviderAccountManagerTest {
         val current = store.settingsFlow.value.providers.find { it.id == provider.id }
         assertTrue(current is ProviderSetting.Grok)
         assertEquals(originalCredential, (current as ProviderSetting.Grok).credential)
-        assertEquals("old-access", current.credential?.accessToken)
+        assertEquals("old-access", (current as ProviderSetting.Grok).credential?.accessToken)
     }
 
     @Test
