@@ -44,11 +44,7 @@ internal object GrokAuth {
     )
 
     suspend fun revokeRefreshToken(http: OkHttpClient, refreshToken: String): Boolean {
-        // Never forward a refresh token through an HTTP redirect, including 307/308.
-        val revocationHttp = http.newBuilder()
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .build()
+        val revocationHttp = http.forOAuthTokenRevocation()
         val endpoint = try {
             val discoveryRequest = Request.Builder()
                 .url("$ISSUER/.well-known/openid-configuration")

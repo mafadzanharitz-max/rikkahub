@@ -211,11 +211,7 @@ internal object ChatGPTAuth {
     }
 
     suspend fun revokeRefreshToken(http: OkHttpClient, refreshToken: String, clientId: String): Boolean {
-        // Never forward a refresh token through an HTTP redirect, including 307/308.
-        val revocationHttp = http.newBuilder()
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .build()
+        val revocationHttp = http.forOAuthTokenRevocation()
         val discoveryRequest = Request.Builder().url(DISCOVERY_ENDPOINT).get().build()
         val endpoint = revocationHttp.newCall(discoveryRequest).await().use { response ->
             if (!response.isSuccessful) return false

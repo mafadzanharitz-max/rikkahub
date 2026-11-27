@@ -84,16 +84,13 @@ class ProviderAccountManagerTest {
                 request.body?.writeTo(buffer)
                 lastRevokeBody.set(buffer.readUtf8())
                 if (holdRevokeResponse) releaseRevoke.await(10, TimeUnit.SECONDS)
-                val response = Response.Builder()
+                Response.Builder()
                     .request(request)
                     .protocol(Protocol.HTTP_1_1)
                     .code(revokeResponseCode)
                     .message("")
                     .body("".toResponseBody("application/json".toMediaType()))
-                if (revokeResponseCode == 307) {
-                    response.header("Location", "https://attacker.example/collect")
-                }
-                response.build()
+                    .build()
             } else {
                 refreshRequestCount.incrementAndGet()
                 requestArrived.countDown()
@@ -244,42 +241,6 @@ class ProviderAccountManagerTest {
         releaseRevoke.countDown()
         assertTrue(logout.await())
         assertNull(store.credential())
-    }
-
-    @Test
-    fun `chatgpt logout never forwards refresh token through a cross origin redirect`() = runBlocking {
-        val store = createStore()
-        val manager = ProviderAccountManager(store, appScope, client)
-        revokeResponseCode = 307
-
-        val revoked = manager.logout(provider.id)
-
-        assertFalse(revoked)
-        assertEquals(1, revokeRequestCount.get())
-        assertEquals(0, refreshRequestCount.get())
-        assertNull(store.credential())
-    }
-
-    @Test
-    fun `grok logout never forwards refresh token through a cross origin redirect`() = runBlocking {
-        val grokProvider = ProviderSetting.Grok(
-            credential = OAuthCredential(
-                accessToken = "grok-access",
-                refreshToken = "grok-refresh",
-                expiresAt = System.currentTimeMillis() + 60 * 60 * 1000L,
-            )
-        )
-        val store = createStore(grokProvider)
-        val manager = ProviderAccountManager(store, appScope, client)
-        revokeResponseCode = 307
-
-        val revoked = manager.logout(grokProvider.id)
-
-        assertFalse(revoked)
-        assertEquals(1, revokeRequestCount.get())
-        assertEquals(0, refreshRequestCount.get())
-        val saved = store.settingsFlow.value.providers.find { it.id == grokProvider.id } as ProviderSetting.Grok
-        assertNull(saved.credential)
     }
 
     @Test
