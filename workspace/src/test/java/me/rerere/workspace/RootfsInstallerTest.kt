@@ -128,6 +128,128 @@ class RootfsInstallerTest {
         assertFalse(backup.exists())
     }
 
+    @Test
+    fun activationReplacesOldRootfsAndRemovesBackup() {
+        val linux = tmp.newFolder("linux")
+        File(linux, "old-rootfs").writeText("old")
+        val staging = tmp.newFolder("staging")
+        File(staging, "new-rootfs").writeText("new")
+        val backup = File(tmp.root, "backup")
+
+        createInstaller().activateRootfs(staging, linux, backup)
+
+        assertEquals("new", File(linux, "new-rootfs").readText())
+        assertFalse(File(linux, "old-rootfs").exists())
+        assertFalse(backup.exists())
+    }
+
+    @Test
+    fun activationFailureRestoresPreviousRootfs() {
+        val linux = tmp.newFolder("linux")
+        File(linux, "old-rootfs").writeText("old")
+        val missingStaging = File(tmp.root, "missing-staging")
+        val backup = File(tmp.root, "backup")
+
+        try {
+            createInstaller().activateRootfs(missingStaging, linux, backup)
+            throw AssertionError("Expected activation to fail")
+        } catch (expected: IllegalStateException) {
+            assertEquals("old", File(linux, "old-rootfs").readText())
+            assertFalse(backup.exists())
+        }
+    }
+
+    @Test
+    fun backupRecoveryRestoresRootfsAfterInterruptedActivation() {
+        // Reproduce the exact crash window: old active RootFS has been renamed
+        // to backup, but staged RootFS has not yet been moved into the active path.
+        val linux = tmp.newFolder("linux")
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
+        File(linux, "etc/os-release").writeText("original-rootfs")
+        val backup = File(tmp.root, "backup")
+        assertTrue("Simulated pre-crash rename must succeed", linux.renameTo(backup))
+        assertFalse(linux.exists())
+
+        // A new installer instance represents a fresh process after restart.
+        createInstaller().recoverRootfsBackup(linux, backup)
+
+        assertTrue(File(linux, "usr/bin/dash").readBytes().contentEquals(armv7TestShellElf()))
+        assertEquals("original-rootfs", File(linux, "etc/os-release").readText())
+        assertTrue(WorkspaceManager.isUsableRootfs(linux))
+        assertFalse(backup.exists())
+    }
+
+    @Test
+    fun backupRecoveryRemovesStaleBackupWhenActiveRootfsIsUsable() {
+        val linux = tmp.newFolder("linux")
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
+        val backup = tmp.newFolder("backup")
+        File(backup, "old-rootfs").writeText("old")
+
+        createInstaller().recoverRootfsBackup(linux, backup)
+
+        assertTrue(File(linux, "usr/bin/dash").readBytes().contentEquals(armv7TestShellElf()))
+        assertFalse(backup.exists())
+    }
+
+    @Test
+    fun rejectsCleartextRootfsUrl() {
+        try {
+            createInstaller().requireHttpsUrl("http://example.invalid/rootfs.tar.gz")
+            throw AssertionError("Expected cleartext URL to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("HTTPS"))
+        }
+    }
+
+    @Test
+    fun rejectsHttpsToHttpRedirect() {
+        try {
+            createInstaller().resolveHttpsRedirect(
+                "https://example.invalid/rootfs.tar.gz",
+                "http://mirror.invalid/rootfs.tar.gz",
+            )
+            throw AssertionError("Expected HTTPS downgrade to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("HTTPS"))
+        }
+    }
+
+    @Test
+    fun acceptsRelativeHttpsRedirect() {
+        assertEquals(
+            "https://example.invalid/mirror/rootfs.tar.gz",
+            createInstaller().resolveHttpsRedirect(
+                "https://example.invalid/releases/rootfs.tar.gz",
+                "../mirror/rootfs.tar.gz",
+            ),
+        )
+    }
+
+    @Test
+    fun backupRecoveryRejectsInvalidBackupAndPreservesBothDirectories() {
+        val manager = WorkspaceManager(tmp.newFolder("invalid-backup-base"))
+        val root = "invalid"
+        manager.ensureWorkspace(root)
+        val linux = manager.linuxDir(root)
+        File(linux, "partial").writeText("active-incomplete")
+        val backup = File(manager.tempDir(root), "rootfs-backup").apply { mkdirs() }
+        File(backup, "partial").writeText("backup-incomplete")
+
+        try {
+            RootfsInstaller(manager).recoverBackup(root)
+            throw AssertionError("Expected invalid backup recovery to fail")
+        } catch (expected: IllegalStateException) {
+            assertTrue(expected.message.orEmpty().contains("backup failed validation"))
+        }
+        assertEquals("active-incomplete", File(linux, "partial").readText())
+        assertEquals("backup-incomplete", File(backup, "partial").readText())
+    }
+
     private fun createInstaller() = RootfsInstaller(WorkspaceManager(tmp.newFolder()))
 
     private fun OutputStream.writeTarEntry(name: String, type: Char, data: ByteArray, linkName: String = "") {

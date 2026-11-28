@@ -37,18 +37,20 @@ class RootfsInstaller(
         val tempDir = manager.tempDir(root)
         val archive = File(tempDir, "rootfs.${format.extension}")
         val stagingDir = File(tempDir, "rootfs-staging")
+        val backupDir = File(tempDir, "rootfs-backup")
         val linuxDir = manager.linuxDir(root)
 
         try {
+            recoverRootfsBackup(linuxDir, backupDir)
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
             download(url, archive, onProgress)
             extractTar(archive, stagingDir, format, onProgress)
-            linuxDir.deleteRecursively()
-            require(stagingDir.renameTo(linuxDir)) {
-                "Failed to move rootfs into workspace"
-            }
-            patcher.patch(linuxDir)
+            Armv7Rootfs.validate(stagingDir)
+            // Patch the candidate completely before touching the active RootFS.
+            patcher.patch(stagingDir)
+            Armv7Rootfs.validate(stagingDir)
+            activateRootfs(stagingDir, linuxDir, backupDir)
             onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
         } finally {
             archive.delete()
@@ -64,55 +66,167 @@ class RootfsInstaller(
         )
     }
 
+    /**
+     * RootFS archives are executable filesystem images. Never permit cleartext
+     * transport, including when the user supplies a custom download URL.
+     */
+    internal fun requireHttpsUrl(value: String): URL {
+        val parsed = URL(value)
+        require(parsed.protocol.equals("https", ignoreCase = true) && parsed.host.isNotBlank()) {
+            "RootFS downloads and redirects must use HTTPS"
+        }
+        return parsed
+    }
+
+    internal fun resolveHttpsRedirect(currentUrl: String, location: String): String {
+        require(location.isNotBlank()) { "RootFS redirect omitted its Location header" }
+        val current = requireHttpsUrl(currentUrl)
+        val redirected = URL(current, location)
+        requireHttpsUrl(redirected.toExternalForm())
+        return redirected.toExternalForm()
+    }
+
+    /**
+     * Recover the previous RootFS if the process was interrupted after moving it
+     * to the backup directory but before activating the staged replacement.
+     */
+    internal fun recoverRootfsBackup(linuxDir: File, backupDir: File) {
+        if (!backupDir.exists()) return
+        val backupError = WorkspaceManager.rootfsValidationError(backupDir)
+        if (backupError != null) {
+            // Never replace the active RootFS with an invalid backup. Keep both
+            // directories intact so recovery can be retried or investigated.
+            error("RootFS backup failed validation: $backupError")
+        }
+        if (!WorkspaceManager.isUsableRootfs(linuxDir)) {
+            if (linuxDir.exists()) {
+                check(linuxDir.deleteRecursively()) {
+                    "Unable to clear incomplete RootFS activation before recovery"
+                }
+            }
+            check(backupDir.renameTo(linuxDir)) {
+                "Unable to restore previous RootFS from backup: ${backupDir.absolutePath}"
+            }
+        } else {
+            // A usable active RootFS means activation completed; this is stale backup data.
+            check(backupDir.deleteRecursively()) {
+                "Unable to remove stale RootFS backup: ${backupDir.absolutePath}"
+            }
+        }
+    }
+
+    /**
+     * Same-filesystem directory renames keep activation atomic. If activation fails,
+     * restore the previous directory; retain the backup if restoration itself fails.
+     */
+    internal fun activateRootfs(stagingDir: File, linuxDir: File, backupDir: File) {
+        check(!backupDir.exists()) { "RootFS backup must be recovered before activation" }
+        val existingEntries = if (linuxDir.exists()) {
+            linuxDir.list() ?: error("Unable to inspect existing RootFS directory")
+        } else {
+            emptyArray()
+        }
+        val hadPreviousRootfs = existingEntries.isNotEmpty()
+        if (hadPreviousRootfs) {
+            check(linuxDir.renameTo(backupDir)) {
+                "Unable to preserve existing RootFS before activation"
+            }
+        } else if (linuxDir.exists()) {
+            check(linuxDir.deleteRecursively()) {
+                "Unable to clear empty RootFS directory before activation"
+            }
+        }
+
+        try {
+            check(stagingDir.renameTo(linuxDir)) {
+                "Failed to move staged RootFS into workspace"
+            }
+        } catch (failure: Throwable) {
+            if (linuxDir.exists() && !linuxDir.deleteRecursively()) {
+                failure.addSuppressed(IOException("Unable to remove incomplete activated RootFS"))
+            }
+            if (hadPreviousRootfs && backupDir.exists() && !backupDir.renameTo(linuxDir)) {
+                failure.addSuppressed(
+                    IOException("Previous RootFS remains preserved at ${backupDir.absolutePath}")
+                )
+            }
+            throw failure
+        }
+
+        // Cleanup failure is non-fatal: the new RootFS is active and recovery will
+        // recognize it as usable and remove this stale backup on the next install.
+        if (backupDir.exists()) backupDir.deleteRecursively()
+    }
+
     private fun download(
         url: String,
         target: File,
         onProgress: (RootfsInstallProgress) -> Unit,
     ) {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
-        connection.readTimeout = READ_TIMEOUT_MS
-        connection.instanceFollowRedirects = true
-        try {
-            val code = connection.responseCode
-            require(code in 200..299) { "Rootfs download failed: HTTP $code" }
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
-            target.parentFile?.mkdirs()
-            connection.inputStream.use { input ->
-                target.outputStream().use { output ->
-                    val buffer = ByteArray(BUFFER_SIZE)
-                    var bytesRead = 0L
-                    var lastReportBytes = 0L
-                    while (true) {
-                        checkInterrupted()
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        bytesRead += read
-                        if (bytesRead - lastReportBytes >= PROGRESS_STEP_BYTES || bytesRead == totalBytes) {
-                            lastReportBytes = bytesRead
+        var currentUrl = requireHttpsUrl(url).toExternalForm()
+        var redirectCount = 0
+        while (true) {
+            val requestUrl = requireHttpsUrl(currentUrl)
+            val connection = requestUrl.openConnection() as HttpURLConnection
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = READ_TIMEOUT_MS
+            connection.instanceFollowRedirects = false
+            try {
+                val code = connection.responseCode
+                if (code == 301 ||
+                    code == 302 ||
+                    code == 303 ||
+                    code == 307 ||
+                    code == 308
+                ) {
+                    require(redirectCount < 5) {
+                        "RootFS download exceeded the redirect limit"
+                    }
+                    val location = connection.getHeaderField("Location")
+                    currentUrl = resolveHttpsRedirect(currentUrl, location.orEmpty())
+                    redirectCount++
+                    continue
+                }
+                require(code in 200..299) { "Rootfs download failed: HTTP $code" }
+                val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
+                target.parentFile?.mkdirs()
+                connection.inputStream.use { input ->
+                    target.outputStream().use { output ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        var bytesRead = 0L
+                        var lastReportBytes = 0L
+                        while (true) {
+                            checkInterrupted()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            bytesRead += read
+                            if (bytesRead - lastReportBytes >= PROGRESS_STEP_BYTES || bytesRead == totalBytes) {
+                                lastReportBytes = bytesRead
+                                onProgress(
+                                    RootfsInstallProgress(
+                                        stage = RootfsInstallStage.DOWNLOADING,
+                                        bytesRead = bytesRead,
+                                        totalBytes = totalBytes,
+                                    )
+                                )
+                            }
+                        }
+                        if (bytesRead == 0L) {
                             onProgress(
                                 RootfsInstallProgress(
                                     stage = RootfsInstallStage.DOWNLOADING,
-                                    bytesRead = bytesRead,
+                                    bytesRead = 0,
                                     totalBytes = totalBytes,
                                 )
                             )
                         }
                     }
-                    if (bytesRead == 0L) {
-                        onProgress(
-                            RootfsInstallProgress(
-                                stage = RootfsInstallStage.DOWNLOADING,
-                                bytesRead = 0,
-                                totalBytes = totalBytes,
-                            )
-                        )
-                    }
                 }
+                return
+            } finally {
+                connection.disconnect()
             }
-        } finally {
-            connection.disconnect()
         }
     }
 

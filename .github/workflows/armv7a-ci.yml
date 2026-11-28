@@ -70,8 +70,6 @@ jobs:
           PY
       - name: Apply fail-closed ARMv7 source adaptations
         run: python3 scripts/ci/apply-overlay.py .
-      - name: Apply transactional RootFS installation hardening
-        run: python3 scripts/ci/patch-rootfs-transaction.py .
       - name: Apply bounded RootFS archive extraction hardening
         run: python3 scripts/ci/patch-rootfs-archive-hardening.py .
       - name: Validate generated RootFS patch and patch idempotency

@@ -20,6 +20,15 @@ SOURCE_MARKERS = (
     "MAX_ARCHIVE_ENTRIES",
     "verifySha256(archive, OFFICIAL_ROOTFS_SHA256)",
     "OFFICIAL_ROOTFS_SHA256",
+    "internal fun requireHttpsUrl(",
+    "internal fun resolveHttpsRedirect(",
+    "internal fun recoverRootfsBackup(",
+    "internal fun activateRootfs(",
+    "patcher.patch(stagingDir)",
+    "Armv7Rootfs.validate(stagingDir)",
+    "instanceFollowRedirects = false",
+    "redirectCount < 5",
+    "RootFS backup failed validation",
 )
 TEST_MARKERS = (
     "verifySha256AcceptsMatchingDigest",
@@ -34,6 +43,12 @@ TEST_MARKERS = (
     "extractRejectsMalformedPaxRecordLength",
     "extractUsesUtf8ByteLengthsForMultiplePaxRecords",
     "createHardLinkFallsBackToCopyWhenAndroidDeniesLinkat",
+    "activationReplacesOldRootfsAndRemovesBackup",
+    "activationFailureRestoresPreviousRootfs",
+    "backupRecoveryRestoresRootfsAfterInterruptedActivation",
+    "backupRecoveryRejectsInvalidBackupAndPreservesBothDirectories",
+    "rejectsCleartextRootfsUrl",
+    "rejectsHttpsToHttpRedirect",
 )
 FORBIDDEN_SOURCE_MARKERS = ("root.resolve(linkName.trimStart('/',",)
 
