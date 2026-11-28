@@ -1,8 +1,12 @@
 package me.rerere.rikkahub.utils
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Process
+import android.os.SystemClock
 import android.util.Log
-import androidx.core.content.edit
 
 private const val TAG = "CrashHandler"
 private const val PREFS_NAME = "crash_handler"
@@ -31,9 +35,53 @@ object CrashHandler {
             .getString(KEY_STACKTRACE, null)
     }
 
-    fun clearCrashed(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit { remove(KEY_CRASHED).remove(KEY_STACKTRACE) }
+    /** Clear the marker synchronously before a process restart. */
+    fun clearCrashed(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_CRASHED)
+            .remove(KEY_STACKTRACE)
+            .commit()
+    }
+
+    /**
+     * Restart in a fresh process so Application.onCreate() can initialize Koin again.
+     * Starting RouteActivity directly would reuse this SafeMode process, whose Application
+     * startup intentionally returned before Koin initialization.
+     */
+    fun restartAfterCrash(context: Context): Boolean {
+        val appContext = context.applicationContext
+        val launchIntent = appContext.packageManager
+            .getLaunchIntentForPackage(appContext.packageName) ?: return false
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        val alarmManager = appContext.getSystemService(AlarmManager::class.java) ?: return false
+        val restartIntent = PendingIntent.getActivity(
+            appContext,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        return try {
+            alarmManager.set(
+                AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 500L,
+                restartIntent,
+            )
+            if (!clearCrashed(appContext)) {
+                alarmManager.cancel(restartIntent)
+                restartIntent.cancel()
+                return false
+            }
+            Process.killProcess(Process.myPid())
+            true
+        } catch (error: Exception) {
+            alarmManager.cancel(restartIntent)
+            restartIntent.cancel()
+            Log.e(TAG, "Failed to schedule app restart", error)
+            false
+        }
     }
 
     private fun markCrashed(context: Context, thread: Thread, throwable: Throwable) {

@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -130,9 +131,13 @@ class SafeModeActivity : ComponentActivity() {
                             }
                             Button(
                                 onClick = {
-                                    CrashHandler.clearCrashed(this@SafeModeActivity)
-                                    startActivity(Intent(this@SafeModeActivity, RouteActivity::class.java))
-                                    finish()
+                                    if (!CrashHandler.restartAfterCrash(this@SafeModeActivity)) {
+                                        Toast.makeText(
+                                            this@SafeModeActivity,
+                                            "Restart could not be scheduled. Reopen RikkaHub manually.",
+                                            Toast.LENGTH_LONG,
+                                        ).show()
+                                    }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
