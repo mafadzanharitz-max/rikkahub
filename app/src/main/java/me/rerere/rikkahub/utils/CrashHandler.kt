@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.edit
 
 private const val TAG = "CrashHandler"
 private const val PREFS_NAME = "crash_handler"
