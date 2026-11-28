@@ -119,7 +119,7 @@ class SafeModeActivity : ComponentActivity() {
                                 val vScroll = rememberScrollState()
                                 val hScroll = rememberScrollState()
                                 Text(
-                                    text = stackTrace,
+                                    text = stackTrace.orEmpty(),
                                     modifier = Modifier
                                         .padding(12.dp)
                                         .verticalScroll(vScroll)
@@ -253,7 +253,7 @@ class SafeModeActivity : ComponentActivity() {
                                 val vScroll = rememberScrollState()
                                 val hScroll = rememberScrollState()
                                 Text(
-                                    text = stackTrace,
+                                    text = stackTrace.orEmpty(),
                                     modifier = Modifier
                                         .padding(12.dp)
                                         .verticalScroll(vScroll)
