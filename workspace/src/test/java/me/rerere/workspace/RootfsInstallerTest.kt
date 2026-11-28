@@ -90,15 +90,26 @@ class RootfsInstallerTest {
         val staging = File(temp, "rootfs-staging").apply { mkdirs() }
         File(staging, "partial").writeText("discard")
         val archive = File(temp, "rootfs.tar.gz").apply { writeText("partial") }
-        val rootfsTmp = File(manager.linuxDir(root), "tmp").apply { mkdirs() }
+        val linux = manager.linuxDir(root)
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
+        val rootfsTmp = File(linux, "tmp")
+        val varTmp = File(linux, "var/tmp").apply { mkdirs() }
         File(rootfsTmp, "stale").writeText("discard")
+        File(varTmp, "stale").writeText("discard")
+        assertTrue(manager.hasRootfs(root))
 
         manager.cleanupAllTempDirs()
 
         assertEquals("preserve", File(backup, "marker").readText())
         assertFalse(staging.exists())
         assertFalse(archive.exists())
-        assertFalse(rootfsTmp.exists())
+        assertTrue(rootfsTmp.isDirectory)
+        assertTrue(varTmp.isDirectory)
+        assertFalse(File(rootfsTmp, "stale").exists())
+        assertFalse(File(varTmp, "stale").exists())
+        assertTrue("Cleanup must not invalidate an otherwise healthy RootFS", manager.hasRootfs(root))
     }
 
     @Test

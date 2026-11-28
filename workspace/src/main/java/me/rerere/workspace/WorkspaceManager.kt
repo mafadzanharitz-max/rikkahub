@@ -345,9 +345,12 @@ class WorkspaceManager(
                 // Keep the transactional backup intact until RootfsInstaller recovery has inspected it.
                 val temp = tempDir(root)
                 temp.listFiles()?.filterNot { it.name == "rootfs-backup" }?.forEach { it.deleteRecursively() }
-                // Rootfs /tmp and /var/tmp
-                File(linuxDir(root), "tmp").let { if (it.exists()) it.deleteRecursively() }
-                File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+                // Clear temporary contents without removing required RootFS directories.
+                // Rootfs validation requires /tmp to exist; deleting the directory itself
+                // makes a healthy installation appear broken on the next application launch.
+                listOf("tmp", "var/tmp").forEach { relativePath ->
+                    File(linuxDir(root), relativePath).listFiles()?.forEach { it.deleteRecursively() }
+                }
             }
         }
     }
