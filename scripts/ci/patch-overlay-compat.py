@@ -5,16 +5,16 @@ from pathlib import Path
 path = Path("scripts/ci/apply-overlay.py")
 source = path.read_text()
 old_installer_patch = r'''    installer = root / "workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt"
-    replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\\n            linuxDir.deleteRecursively()',
-                 'extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            linuxDir.deleteRecursively()')
+    replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\n            linuxDir.deleteRecursively()',
+                 'extractTar(archive, stagingDir, format, onProgress)\n            Armv7Rootfs.validate(stagingDir)\n            linuxDir.deleteRecursively()')
 '''
 new_installer_patch = r'''    installer = root / "workspace/src/main/java/me/rerere/workspace/RootfsInstaller.kt"
     installer_source = installer.read_text()
     if "internal fun activateRootfs(" in installer_source:
         print("Tracked transactional RootFS implementation detected; skipping legacy overlay mutation.")
     else:
-        replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\\n            linuxDir.deleteRecursively()',
-                     'extractTar(archive, stagingDir, format, onProgress)\\n            Armv7Rootfs.validate(stagingDir)\\n            linuxDir.deleteRecursively()')
+        replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\n            linuxDir.deleteRecursively()',
+                     'extractTar(archive, stagingDir, format, onProgress)\n            Armv7Rootfs.validate(stagingDir)\n            linuxDir.deleteRecursively()')
 '''
 start_marker = '    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"\n'
 end_marker = '    templates = {\n'
