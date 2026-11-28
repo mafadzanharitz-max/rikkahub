@@ -414,9 +414,9 @@ def apply(root):
         '''    @Test fun rejectsRootfsMissingRequiredDirectories() {
         val root = Files.createTempDirectory("rootfs-layout").toFile()
         try {
-            val binary = root.resolve("usr/bin/bash")
-            binary.parentFile.mkdirs()
-            binary.writeBytes(armv7TestShellElf())
+            val candidate = root.resolve("usr/bin/bash")
+            candidate.parentFile.mkdirs()
+            candidate.writeBytes(armv7TestShellElf())
             org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
                 Armv7Rootfs.validate(root)
             }
