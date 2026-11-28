@@ -74,6 +74,76 @@ class SafeModeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val stackTrace = CrashHandler.getStackTrace(this)
+        if (stackTrace != null) {
+            // This path must remain independent of Koin because the crash may have
+            // happened while Koin modules were being initialized in Application.onCreate.
+            enableEdgeToEdge()
+            setContent {
+                MaterialTheme {
+                    Scaffold(
+                        topBar = { TopAppBar(title = { Text(stringResource(R.string.safe_mode_title)) }) }
+                    ) { innerPadding ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(stringResource(R.string.safe_mode_description))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.safe_mode_crash_report),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("crash", stackTrace))
+                                    }
+                                ) {
+                                    Text(stringResource(R.string.safe_mode_copy))
+                                }
+                            }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            ) {
+                                val vScroll = rememberScrollState()
+                                val hScroll = rememberScrollState()
+                                Text(
+                                    text = stackTrace,
+                                    modifier = Modifier
+                                        .padding(12.dp)
+                                        .verticalScroll(vScroll)
+                                        .horizontalScroll(hScroll),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    CrashHandler.clearCrashed(this@SafeModeActivity)
+                                    startActivity(Intent(this@SafeModeActivity, RouteActivity::class.java))
+                                    finish()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.safe_mode_enter_app))
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         CrashHandler.clearCrashed(this)
         enableEdgeToEdge()
         setContent {
