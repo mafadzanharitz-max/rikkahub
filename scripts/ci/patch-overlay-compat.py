@@ -16,6 +16,9 @@ new_installer_patch = r'''    installer = root / "workspace/src/main/java/me/rer
         replace_once(installer, 'extractTar(archive, stagingDir, format, onProgress)\n            linuxDir.deleteRecursively()',
                      'extractTar(archive, stagingDir, format, onProgress)\n            Armv7Rootfs.validate(stagingDir)\n            linuxDir.deleteRecursively()')
 '''
+if old_installer_patch not in source:
+    raise SystemExit("Pinned overlay RootFS installer adaptation changed")
+source = source.replace(old_installer_patch, new_installer_patch, 1)
 start_marker = '    fixture = root / "workspace/src/test/java/me/rerere/workspace/ExampleUnitTest.kt"\n'
 end_marker = '    templates = {\n'
 start = source.find(start_marker)
