@@ -339,7 +339,7 @@ def apply(root):
         s = once(s, "        private const val TAR_BLOCK_SIZE = 512\n",
                  constants + "        private const val TAR_BLOCK_SIZE = 512\n",
                  "archive limit constants")
-    s = once(s, 'import java.net.URL\\n', 'import java.net.URL\\nimport java.security.MessageDigest\\n', "SHA-256 import")
+    s = once(s, 'import java.net.URL\n', 'import java.net.URL\nimport java.security.MessageDigest\n', "SHA-256 import")
     checksum_helpers = '''    internal fun verifySha256(archive: File, expected: String) {
         require(expected.matches(Regex("[0-9a-fA-F]{64}"))) {
             "Expected RootFS SHA-256 must contain 64 hexadecimal characters"
@@ -369,16 +369,16 @@ def apply(root):
     }
 
 '''
-    marker = "    private fun download(\\n"
+    marker = "    private fun download(\n"
     if ("internal fun verifySha256(" not in s) {
         if (s.count(marker) != 1) raise SystemExit("RootFS checksum helper insertion point changed")
         s = s.replace(marker, checksum_helpers + marker, 1)
     }
     s = once(s,
-        '            download(url, archive, onProgress)\\n            extractTar(archive, stagingDir, format, onProgress)',
-        '            download(url, archive, onProgress)\\n            verifyOfficialArchive(url, archive)\\n            extractTar(archive, stagingDir, format, onProgress)',
+        '            download(url, archive, onProgress)\n            extractTar(archive, stagingDir, format, onProgress)',
+        '            download(url, archive, onProgress)\n            verifyOfficialArchive(url, archive)\n            extractTar(archive, stagingDir, format, onProgress)',
         "official RootFS checksum verification")
-    s = once(s, '        private const val TAR_BLOCK_SIZE = 512\\n',
+    s = once(s, '        private const val TAR_BLOCK_SIZE = 512\n',
         '''        private const val OFFICIAL_ROOTFS_URL = "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-armhf.tar.gz"
         private const val OFFICIAL_ROOTFS_SHA256 = "4fcee4d278f1c5232e085a021a85e4c6cef3853557a88d98ff380b5e5d5841bb"
         private const val TAR_BLOCK_SIZE = 512
@@ -407,7 +407,7 @@ def apply(root):
     armv7_tests = armv7_test_path.read_text()
     armv7_tests = once(armv7_tests,
         '            val binary = root.resolve("usr/bin/bash")',
-        '            listOf("etc", "var", "tmp").forEach { root.resolve(it).mkdirs() }\\n            val binary = root.resolve("usr/bin/bash")',
+        '            listOf("etc", "var", "tmp").forEach { root.resolve(it).mkdirs() }\n            val binary = root.resolve("usr/bin/bash")',
         "ARMHF validator test layout")
     armv7_tests = once(armv7_tests,
         '    @Test fun acceptsArmAndRejectsArm64BeforeReplacingRootfs() {',
