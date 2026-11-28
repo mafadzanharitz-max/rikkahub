@@ -62,6 +62,13 @@ const val MEMORY_DREAM_NOTIFICATION_CHANNEL_ID = "memory_dream"
 class RikkaHubApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Install diagnostics before restore/Koin: either can fail before the previous
+        // late installation point, leaving startup crashes without a recoverable report.
+        CrashHandler.install(this)
+        // If the previous launch crashed during Application startup, let RouteActivity
+        // redirect to the standalone crash-report screen without initializing Koin again.
+        if (CrashHandler.hasCrashed(this) && CrashHandler.getStackTrace(this) != null) return
+
         // Restore files and settings before eager Koin singletons or workers can access them.
         try {
             val restored = runBlocking(Dispatchers.IO) {
@@ -84,9 +91,6 @@ class RikkaHubApp : Application() {
 
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)
-
-        // install crash handler
-        CrashHandler.install(this)
 
         // delete temp files
         deleteTempFiles()
