@@ -82,7 +82,9 @@ class WorkspaceManager(
 
     fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
 
-    fun hasRootfs(root: String): Boolean = isUsableRootfs(linuxDir(root))
+    fun hasRootfs(root: String): Boolean = rootfsValidationError(root) == null
+
+    fun rootfsValidationError(root: String): String? = rootfsValidationError(linuxDir(root))
 
     fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
 
@@ -367,16 +369,19 @@ class WorkspaceManager(
 
         private val ROOT_NAME_REGEX = Regex("[A-Za-z0-9._-]+")
 
-        /** RootFS is usable only when its required layout and ARMHF ELF shell validate. */
-        fun isUsableRootfs(linuxDir: File): Boolean {
-            if (!linuxDir.isDirectory) return false
+        /** Return null only when the active RootFS passes every structural and ARMHF check. */
+        fun rootfsValidationError(linuxDir: File): String? {
+            if (!linuxDir.isDirectory) return "RootFS directory is missing or is not a directory: ${linuxDir.absolutePath}"
             return try {
                 Armv7Rootfs.validate(linuxDir)
-                true
-            } catch (_: Exception) {
-                false
+                null
+            } catch (error: Exception) {
+                error.message?.takeIf { it.isNotBlank() }
+                    ?: "RootFS validation failed (${error.javaClass.simpleName})"
             }
         }
+
+        fun isUsableRootfs(linuxDir: File): Boolean = rootfsValidationError(linuxDir) == null
 
         /** Rootfs 内使用的 shell: 优先 bash, 没有时 (如 Alpine minirootfs) 回退到 /bin/sh */
         fun rootfsShell(linuxDir: File): String =

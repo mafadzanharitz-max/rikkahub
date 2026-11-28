@@ -32,6 +32,8 @@ data class WorkspaceEntity(
     val root: String,
     @ColumnInfo("shell_status")
     val shellStatus: String = WorkspaceShellStatus.DISABLED.name,
+    @ColumnInfo("shell_status_reason")
+    val shellStatusReason: String? = null,
     @ColumnInfo("created_at")
     val createdAt: Long,
     @ColumnInfo("updated_at")

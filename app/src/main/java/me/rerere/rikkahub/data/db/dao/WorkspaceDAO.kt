@@ -21,8 +21,8 @@ interface WorkspaceDAO {
     @Query("SELECT * FROM workspaces")
     suspend fun getAll(): List<WorkspaceEntity>
 
-    @Query("UPDATE workspaces SET shell_status = :shellStatus, updated_at = :updatedAt WHERE id = :id")
-    suspend fun updateShellStatus(id: String, shellStatus: String, updatedAt: Long): Int
+    @Query("UPDATE workspaces SET shell_status = :shellStatus, shell_status_reason = :reason, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateShellStatus(id: String, shellStatus: String, reason: String?, updatedAt: Long): Int
 
     @Query("UPDATE workspaces SET shell_compatibility_mode = :enabled, updated_at = :updatedAt WHERE id = :id")
     suspend fun setShellCompatibilityMode(id: String, enabled: Boolean, updatedAt: Long): Int

@@ -460,6 +460,20 @@ private fun WorkspaceBasicPage(
                         trailingContent = { ShellStatusBadge(shellStatus) },
                     )
                 }
+                workspace?.shellStatusReason?.takeIf { it.isNotBlank() }?.let { reason ->
+                    item {
+                        Text(
+                            text = reason,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (shellStatus == WorkspaceShellStatus.BROKEN.name) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
             }
         }
 

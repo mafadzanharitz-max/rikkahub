@@ -55,53 +55,54 @@ class WorkspaceRepository(
     fun listFlow(): Flow<List<WorkspaceEntity>> = dao.listFlow()
 
     suspend fun checkIntegrity() = withContext(Dispatchers.IO) {
-        val workspaces = dao.getAll()
-        for (workspace in workspaces) {
-            // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
+        for (workspace in dao.getAll()) {
             if (!workspace.capabilities().localFiles) continue
-            val recoverySucceeded = try {
+            var recoveryError: String? = null
+            try {
                 rootfsInstaller.recoverBackup(workspace.root)
-                true
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                recoveryError = error.diagnosticMessage()
                 Log.e(TAG, "RootFS backup recovery failed: root=${workspace.root}", error)
-                false
             }
             val dir = manager.workspaceDir(workspace.root)
-            if (!dir.exists()) {
-                // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
-                // 仅标记为 BROKEN 以保留记录与助手绑定, 避免误删用户工作区
-                Log.w(TAG, "Workspace directory missing, marking as broken: id=${workspace.id}, root=${workspace.root}")
-                if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
-                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
-                }
+            if (!dir.isDirectory) {
+                updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name, "Workspace directory is missing: ${dir.absolutePath}")
                 continue
             }
-            if (!recoverySucceeded) {
-                if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
-                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
-                }
+            if (recoveryError != null) {
+                updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name, "RootFS backup recovery failed: $recoveryError")
                 continue
             }
-
-            val hasRootfs = manager.hasRootfs(workspace.root)
+            val validationError = manager.rootfsValidationError(workspace.root)
             when (workspace.shellStatus) {
                 WorkspaceShellStatus.INSTALLING.name -> {
-                    // INSTALLING is not durable evidence of a live installer: Android may have
-                    // killed the process before its cancellation/failure handler could run.
-                    updateShellState(
-                        workspace.id,
-                        if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name
-                        else WorkspaceShellStatus.BROKEN.name,
+                    if (validationError == null) updateShellState(
+                        workspace.id, WorkspaceShellStatus.READY.name,
+                        "The previous installation was interrupted; the restored active RootFS passed validation.",
+                    ) else updateShellState(
+                        workspace.id, WorkspaceShellStatus.BROKEN.name,
+                        "RootFS installation was interrupted and the active RootFS is invalid: $validationError",
                     )
                 }
-                WorkspaceShellStatus.READY.name -> if (!hasRootfs) {
-                    Log.w(TAG, "Rootfs missing, marking shell as broken: id=${workspace.id}")
-                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                WorkspaceShellStatus.READY.name -> if (validationError != null) {
+                    Log.w(TAG, "RootFS validation failed: id=${workspace.id}: $validationError")
+                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name, "Active RootFS validation failed: $validationError")
                 }
-                WorkspaceShellStatus.INTERRUPTED.name -> if (!hasRootfs) {
-                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                WorkspaceShellStatus.INTERRUPTED.name -> {
+                    if (validationError == null) updateShellState(
+                        workspace.id, WorkspaceShellStatus.READY.name,
+                        "The interrupted installation was recovered; the active RootFS passed validation.",
+                    ) else updateShellState(
+                        workspace.id, WorkspaceShellStatus.BROKEN.name,
+                        "Active RootFS validation failed after interrupted installation: $validationError",
+                    )
+                }
+                WorkspaceShellStatus.BROKEN.name -> if (validationError == null) {
+                    updateShellState(workspace.id, WorkspaceShellStatus.READY.name, null)
+                } else if (workspace.shellStatusReason.isNullOrBlank()) {
+                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name, "Active RootFS validation failed: $validationError")
                 }
             }
         }
@@ -239,26 +240,37 @@ class WorkspaceRepository(
         return withContext(Dispatchers.IO) {
             try {
                 rootfsInstaller.recoverBackup(workspace.root)
-                val hasRootfs = manager.hasRootfs(workspace.root)
-                val latest = dao.getById(id)
-                if (latest?.shellStatus == WorkspaceShellStatus.INSTALLING.name) {
-                    updateShellState(
-                        id,
-                        if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name
-                        else WorkspaceShellStatus.BROKEN.name,
-                    )
-                } else if (latest?.shellStatus == WorkspaceShellStatus.INTERRUPTED.name && !hasRootfs) {
-                    updateShellState(id, WorkspaceShellStatus.BROKEN.name)
+                val validationError = manager.rootfsValidationError(workspace.root)
+                when (dao.getById(id)?.shellStatus) {
+                    WorkspaceShellStatus.INSTALLING.name, WorkspaceShellStatus.INTERRUPTED.name -> {
+                        if (validationError == null) updateShellState(
+                            id, WorkspaceShellStatus.READY.name,
+                            "The interrupted installation was recovered; the active RootFS passed validation.",
+                        ) else updateShellState(
+                            id, WorkspaceShellStatus.BROKEN.name,
+                            "RootFS recovery completed, but active validation failed: $validationError",
+                        )
+                    }
+                    WorkspaceShellStatus.BROKEN.name -> if (validationError == null) {
+                        updateShellState(id, WorkspaceShellStatus.READY.name, null)
+                    } else updateShellState(id, WorkspaceShellStatus.BROKEN.name, "Active RootFS validation failed: $validationError")
+                    WorkspaceShellStatus.READY.name -> if (validationError != null) {
+                        updateShellState(id, WorkspaceShellStatus.BROKEN.name, "Active RootFS validation failed: $validationError")
+                    }
                 }
-                hasRootfs
+                validationError == null
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
-                val latest = dao.getById(id)
-                if (latest?.shellStatus == WorkspaceShellStatus.INSTALLING.name) {
-                    updateShellState(id, WorkspaceShellStatus.BROKEN.name)
+                val validationError = manager.rootfsValidationError(workspace.root)
+                val reason = "RootFS backup recovery failed: ${error.diagnosticMessage()}"
+                if (validationError == null) {
+                    updateShellState(id, WorkspaceShellStatus.READY.name, "$reason; the active RootFS still passed validation.")
+                    true
+                } else {
+                    updateShellState(id, WorkspaceShellStatus.BROKEN.name, "$reason; active RootFS validation failed: $validationError")
+                    false
                 }
-                throw error
             }
         }
     }
@@ -270,27 +282,50 @@ class WorkspaceRepository(
     ): Boolean {
         val workspace = dao.getById(id) ?: return false
         require(workspace.capabilities().rootfs) { "Rootfs is not available for ${workspace.type} workspaces" }
-        updateShellState(workspace, WorkspaceShellStatus.INSTALLING.name)
+        updateShellState(workspace.id, WorkspaceShellStatus.INSTALLING.name, null)
         try {
-            // runInterruptible 让协程取消转成线程中断, 打断 install 内阻塞的下载/解压循环
-            runInterruptible(Dispatchers.IO) {
-                rootfsInstaller.install(workspace.root, url, onProgress)
+            runInterruptible(Dispatchers.IO) { rootfsInstaller.install(workspace.root, url, onProgress) }
+            val validationError = manager.rootfsValidationError(workspace.root)
+            check(validationError == null) {
+                "RootFS activation completed, but the active RootFS failed validation: $validationError"
             }
-            updateShellState(workspace, WorkspaceShellStatus.READY.name)
+            updateShellState(workspace.id, WorkspaceShellStatus.READY.name, null)
             return true
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
-                updateShellState(workspace.id, WorkspaceShellStatus.INTERRUPTED.name)
+                val validationError = manager.rootfsValidationError(workspace.root)
+                if (validationError == null) updateShellState(
+                    workspace.id, WorkspaceShellStatus.READY.name,
+                    "RootFS installation was cancelled; the previous active RootFS remains valid.",
+                ) else updateShellState(
+                    workspace.id, WorkspaceShellStatus.INTERRUPTED.name,
+                    "RootFS installation was cancelled and the active RootFS is not valid: $validationError",
+                )
             }
             throw e
         } catch (e: InterruptedException) {
             withContext(NonCancellable) {
-                updateShellState(workspace.id, WorkspaceShellStatus.INTERRUPTED.name)
+                val validationError = manager.rootfsValidationError(workspace.root)
+                if (validationError == null) updateShellState(
+                    workspace.id, WorkspaceShellStatus.READY.name,
+                    "RootFS installation was interrupted; the previous active RootFS remains valid.",
+                ) else updateShellState(
+                    workspace.id, WorkspaceShellStatus.INTERRUPTED.name,
+                    "RootFS installation was interrupted and the active RootFS is not valid: $validationError",
+                )
             }
             throw CancellationException("Rootfs install cancelled").also { it.initCause(e) }
         } catch (e: Throwable) {
-            Log.e(TAG, "installRootfs failed: workspace=${workspace.id}, root=${workspace.root}, url=$url", e)
-            updateShellState(workspace, WorkspaceShellStatus.BROKEN.name)
+            val validationError = manager.rootfsValidationError(workspace.root)
+            val failure = e.diagnosticMessage()
+            Log.e(TAG, "installRootfs failed: workspace=${workspace.id}, root=${workspace.root}", e)
+            if (validationError == null) updateShellState(
+                workspace.id, WorkspaceShellStatus.READY.name,
+                "RootFS reinstall failed ($failure), but the existing active RootFS passed validation.",
+            ) else updateShellState(
+                workspace.id, WorkspaceShellStatus.BROKEN.name,
+                "RootFS installation failed ($failure); active RootFS validation failed: $validationError",
+            )
             throw e
         }
     }
@@ -632,21 +667,29 @@ class WorkspaceRepository(
     private suspend fun updateShellState(
         workspace: WorkspaceEntity,
         shellStatus: String,
-    ) = updateShellState(workspace.id, shellStatus)
+        reason: String? = null,
+    ) = updateShellState(workspace.id, shellStatus, reason)
 
     private suspend fun updateShellState(
         workspaceId: String,
         shellStatus: String,
+        reason: String? = null,
     ) {
         dao.updateShellStatus(
             id = workspaceId,
             shellStatus = shellStatus,
+            reason = reason?.take(MAX_STATUS_REASON_LENGTH),
             updatedAt = System.currentTimeMillis(),
         )
     }
 
+    private fun Throwable.diagnosticMessage(): String =
+        message?.takeIf { it.isNotBlank() }?.take(MAX_STATUS_REASON_LENGTH)
+            ?: javaClass.simpleName.ifBlank { "Unknown error" }
+
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val MAX_PREVIEW_BYTES = 512L * 1024
+        private const val MAX_STATUS_REASON_LENGTH = 800
     }
 }

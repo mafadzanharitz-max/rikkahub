@@ -40,6 +40,7 @@ NEW_INSTALL = """        val stagingDir = File(tempDir, "rootfs-staging")
             Armv7Rootfs.validate(stagingDir)
             // Patch the candidate completely before touching the active RootFS.
             patcher.patch(stagingDir)
+            Armv7Rootfs.validate(stagingDir)
             activateRootfs(stagingDir, linuxDir, backupDir)
             onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
         } finally {
@@ -246,6 +247,36 @@ def apply(root: Path) -> None:
         if tests.count(marker) != 1:
             raise SystemExit("RootfsInstallerTest insertion point changed")
         tests = tests.replace(marker, test_methods + marker, 1)
+    diagnostic_tests = """    @Test
+    fun rootfsValidationReturnsSpecificFailureReason() {
+        val manager = WorkspaceManager(tmp.newFolder("diagnostic-base"))
+        val root = "diagnostic"
+        manager.ensureWorkspace(root)
+        val reason = manager.rootfsValidationError(root)
+        assertTrue(reason.orEmpty().contains("Rootfs is missing required directories"))
+        assertFalse(manager.hasRootfs(root))
+    }
+
+    @Test
+    fun rootfsValidationAcceptsValidArmhfLayout() {
+        val manager = WorkspaceManager(tmp.newFolder("valid-base"))
+        val root = "valid"
+        manager.ensureWorkspace(root)
+        val linux = manager.linuxDir(root)
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
+        assertEquals(null, manager.rootfsValidationError(root))
+        assertTrue(manager.hasRootfs(root))
+    }
+
+"""
+    if "rootfsValidationReturnsSpecificFailureReason" not in tests:
+        marker = "    private fun createInstaller()"
+        if tests.count(marker) != 1:
+            raise SystemExit("RootfsInstallerTest diagnostic insertion point changed")
+        tests = tests.replace(marker, diagnostic_tests + marker, 1)
+
     network_tests = "    @Test\n    fun rejectsCleartextRootfsUrl() {\n        try {\n            createInstaller().requireHttpsUrl(\"http://example.invalid/rootfs.tar.gz\")\n            throw AssertionError(\"Expected cleartext URL to be rejected\")\n        } catch (expected: IllegalArgumentException) {\n            assertTrue(expected.message.orEmpty().contains(\"HTTPS\"))\n        }\n    }\n\n    @Test\n    fun rejectsHttpsToHttpRedirect() {\n        try {\n            createInstaller().resolveHttpsRedirect(\n                \"https://example.invalid/rootfs.tar.gz\",\n                \"http://mirror.invalid/rootfs.tar.gz\",\n            )\n            throw AssertionError(\"Expected HTTPS downgrade to be rejected\")\n        } catch (expected: IllegalArgumentException) {\n            assertTrue(expected.message.orEmpty().contains(\"HTTPS\"))\n        }\n    }\n\n    @Test\n    fun acceptsRelativeHttpsRedirect() {\n        assertEquals(\n            \"https://example.invalid/mirror/rootfs.tar.gz\",\n            createInstaller().resolveHttpsRedirect(\n                \"https://example.invalid/releases/rootfs.tar.gz\",\n                \"../mirror/rootfs.tar.gz\",\n            ),\n        )\n    }\n\n"
     if "rejectsCleartextRootfsUrl" not in tests:
         marker = "    private fun createInstaller()"
