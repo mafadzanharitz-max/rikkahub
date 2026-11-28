@@ -92,13 +92,13 @@ class RootfsInstaller(
      */
     internal fun recoverRootfsBackup(linuxDir: File, backupDir: File) {
         if (!backupDir.exists()) return
-        val backupError = WorkspaceManager.rootfsValidationError(backupDir)
-        if (backupError != null) {
-            // Never replace the active RootFS with an invalid backup. Keep both
-            // directories intact so recovery can be retried or investigated.
-            error("RootFS backup failed validation: $backupError")
-        }
         if (!WorkspaceManager.isUsableRootfs(linuxDir)) {
+            val backupError = WorkspaceManager.rootfsValidationError(backupDir)
+            if (backupError != null) {
+                // Never replace an invalid active RootFS with an invalid backup.
+                // Keep both directories intact for a later recovery attempt.
+                error("RootFS backup failed validation: $backupError")
+            }
             if (linuxDir.exists()) {
                 check(linuxDir.deleteRecursively()) {
                     "Unable to clear incomplete RootFS activation before recovery"
