@@ -319,21 +319,30 @@ class WorkspaceDetailVM(
         // Publish the live operation before launching so rapid taps cannot enqueue duplicates.
         _installProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
         installJob = viewModelScope.launch {
+            var maintenance: me.rerere.workspace.RootfsMaintenance? = null
             try {
+                maintenance = repository.requestRootfsMaintenance(workspace.id)
+                    ?: error("Workspace is unavailable for RootFS maintenance")
                 terminalSessionManager.closeWorkspace(workspace.root)
                 backgroundShellManager.killWorkspace(workspace.id)
-                repository.installRootfs(workspace.id, url) { progress ->
-                    _installProgress.value = progress
-                }
+                repository.installRootfs(
+                    workspace.id,
+                    url,
+                    onProgress = { progress -> _installProgress.value = progress },
+                    maintenance = maintenance,
+                )
                 loadWorkspace()
                 refresh()
             } catch (e: CancellationException) {
+                maintenance?.close()
+                maintenance = null
                 withContext(kotlinx.coroutines.NonCancellable) { loadWorkspace() }
                 throw e
             } catch (error: Throwable) {
                 _installError.value = error.message ?: "Rootfs 安装失败"
                 loadWorkspace()
             } finally {
+                maintenance?.close()
                 _installProgress.value = null
             }
         }

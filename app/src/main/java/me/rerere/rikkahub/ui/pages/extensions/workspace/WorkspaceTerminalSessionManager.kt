@@ -21,6 +21,7 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.workspace.RootfsLease
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceMountUnavailableException
 import java.util.concurrent.atomic.AtomicLong
@@ -134,85 +135,109 @@ class WorkspaceTerminalSessionManager internal constructor(
         }
         updateState(root) { it.copy(isCreating = true, errorMessage = null) }
 
-        // 不在本机 Rootfs 里运行的终端 (如远程) 无需准备, 连接在会话启动时建立
-        val prepared = if (!workspace.capabilities().rootfs ||
-            initialState.readiness == WorkspaceTerminalReadiness.Ready) {
-            true
-        } else {
-            try {
-                withContext(Dispatchers.IO) {
-                    if (!workspaceRepository.recoverRootfs(workspace.id)) {
-                        false
-                    } else {
-                        workspaceManager.prepareTerminal(root, appContext.activeDnsServers())
-                        true
+        var rootfsLease: RootfsLease? = null
+        var leaseTransferredToSession = false
+        try {
+            // Remote workspaces do not use the local RootFS gate.
+            val prepared = if (!workspace.capabilities().rootfs) {
+                true
+            } else {
+                try {
+                    withContext(Dispatchers.IO) {
+                        if (initialState.readiness != WorkspaceTerminalReadiness.Ready &&
+                            !workspaceRepository.recoverRootfs(workspace.id)
+                        ) {
+                            false
+                        } else {
+                            val lease = workspaceRepository.acquireRootfsLease(workspace.id)
+                            rootfsLease = lease
+                            try {
+                                if (initialState.readiness != WorkspaceTerminalReadiness.Ready) {
+                                    workspaceManager.prepareTerminal(root, appContext.activeDnsServers())
+                                }
+                                true
+                            } catch (error: Throwable) {
+                                lease.close()
+                                rootfsLease = null
+                                throw error
+                            }
+                        }
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    Log.e(TAG, "Failed to prepare terminal for workspace $root", error)
+                    false
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                Log.e(TAG, "Failed to prepare terminal for workspace $root", error)
-                false
             }
-        }
 
-        if (!prepared) {
-            updateState(root) {
-                it.copy(
-                    readiness = WorkspaceTerminalReadiness.NotInstalled,
-                    isCreating = false,
+            if (!prepared) {
+                updateState(root) {
+                    it.copy(
+                        readiness = WorkspaceTerminalReadiness.NotInstalled,
+                        isCreating = false,
+                    )
+                }
+                return@withContext
+            }
+
+            val tabId = nextTabId.getAndIncrement()
+            val tabNumber = currentState(root).nextTabNumber
+            val sessionLease = rootfsLease
+            val client = WorkspaceTerminalSessionClient(
+                context = appContext,
+                onTitleUpdated = { title -> updateTitle(root, tabId, title) },
+                onFinished = {
+                    markFinished(root = root, tabId = tabId)
+                    sessionLease?.close()
+                },
+            )
+            val result = runCatching {
+                createWorkspaceTerminalSession(
+                    transport = terminalTransport(workspace),
+                    root = root,
+                    client = client,
                 )
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to create terminal for workspace $root", error)
             }
-            return@withContext
-        }
+            val session = result.getOrNull()
 
-        val tabId = nextTabId.getAndIncrement()
-        val tabNumber = currentState(root).nextTabNumber
-        val client = WorkspaceTerminalSessionClient(
-            context = appContext,
-            onTitleUpdated = { title -> updateTitle(root, tabId, title) },
-            onFinished = { markFinished(root = root, tabId = tabId) },
-        )
-        val result = runCatching {
-            createWorkspaceTerminalSession(
-                transport = terminalTransport(workspace),
-                root = root,
+            if (session == null) {
+                sessionLease?.close()
+                // 例如工作区挂载的目录失效, 界面上要能看到原因
+                val message = when (val error = result.exceptionOrNull()) {
+                    is WorkspaceMountUnavailableException -> appContext.getString(
+                        R.string.workspace_terminal_mounts_unavailable,
+                        error.targets.joinToString(),
+                    )
+
+                    else -> error?.message ?: appContext.getString(R.string.workspace_terminal_start_failed)
+                }
+                updateState(root) { it.copy(isCreating = false, errorMessage = message) }
+                return@withContext
+            }
+            leaseTransferredToSession = true
+
+            val tab = WorkspaceTerminalTab(
+                id = tabId,
+                number = tabNumber,
+                session = session,
                 client = client,
             )
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to create terminal for workspace $root", error)
-        }
-        val session = result.getOrNull()
-
-        if (session == null) {
-            // 例如工作区挂载的目录失效, 界面上要能看到原因
-            val message = when (val error = result.exceptionOrNull()) {
-                is WorkspaceMountUnavailableException -> appContext.getString(
-                    R.string.workspace_terminal_mounts_unavailable,
-                    error.targets.joinToString(),
+            updateState(root) { state ->
+                state.copy(
+                    tabs = state.tabs + tab,
+                    selectedTabId = tab.id,
+                    readiness = WorkspaceTerminalReadiness.Ready,
+                    isCreating = false,
+                    nextTabNumber = tabNumber + 1,
                 )
-
-                else -> error?.message ?: appContext.getString(R.string.workspace_terminal_start_failed)
             }
-            updateState(root) { it.copy(isCreating = false, errorMessage = message) }
-            return@withContext
+        } finally {
+            if (!leaseTransferredToSession) rootfsLease?.close()
         }
 
-        val tab = WorkspaceTerminalTab(
-            id = tabId,
-            number = tabNumber,
-            session = session,
-            client = client,
-        )
-        updateState(root) { state ->
-            state.copy(
-                tabs = state.tabs + tab,
-                selectedTabId = tab.id,
-                readiness = WorkspaceTerminalReadiness.Ready,
-                isCreating = false,
-                nextTabNumber = tabNumber + 1,
-            )
-        }
     }
 
     private fun terminalTransport(workspace: WorkspaceEntity): TerminalTransport =

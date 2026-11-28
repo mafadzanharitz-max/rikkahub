@@ -2,6 +2,7 @@ package me.rerere.workspace
 
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 在后台运行的命令, stdout 与 stderr 合并写入日志文件。
@@ -51,5 +52,29 @@ internal class ProotBackgroundCommand(
 
     private companion object {
         const val TERMINATE_GRACE_MS = 3_000L
+    }
+}
+
+
+/** Keeps the workspace lease until the background process has actually exited. */
+internal class LeasedWorkspaceBackgroundCommand(
+    private val delegate: WorkspaceBackgroundCommand,
+    private val lease: AutoCloseable,
+) : WorkspaceBackgroundCommand {
+    private val released = AtomicBoolean(false)
+    override val logPath: String get() = delegate.logPath
+    override fun waitFor(): Int = try {
+        delegate.waitFor()
+    } finally {
+        release()
+    }
+    override fun outputSize(): Long = delegate.outputSize()
+    override fun readOutput(offset: Long, maxBytes: Int): ByteArray = delegate.readOutput(offset, maxBytes)
+    override fun kill() {
+        delegate.kill()
+        release()
+    }
+    private fun release() {
+        if (released.compareAndSet(false, true)) lease.close()
     }
 }

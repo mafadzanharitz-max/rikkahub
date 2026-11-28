@@ -22,6 +22,8 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.SecretCipher
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstaller
+import me.rerere.workspace.RootfsLease
+import me.rerere.workspace.RootfsMaintenance
 import me.rerere.workspace.WorkspaceBackend
 import me.rerere.workspace.WorkspaceBackgroundCommand
 import me.rerere.workspace.WorkspaceCommandResult
@@ -289,16 +291,50 @@ class WorkspaceRepository(
         }
     }
 
+    suspend fun requestRootfsMaintenance(id: String): RootfsMaintenance? {
+        val workspace = dao.getById(id) ?: return null
+        var acquired: RootfsMaintenance? = null
+        return try {
+            val maintenance = runInterruptible(Dispatchers.IO) {
+                manager.requestRootfsMaintenance(workspace.root).also { acquired = it }
+            }
+            currentCoroutineContext().ensureActive()
+            maintenance
+        } catch (error: Throwable) {
+            acquired?.close()
+            throw error
+        }
+    }
+
+    suspend fun acquireRootfsLease(id: String): RootfsLease {
+        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
+        require(workspace.capabilities().rootfs) { "RootFS is not available for ${workspace.type} workspaces" }
+        var acquired: RootfsLease? = null
+        return try {
+            val lease = runInterruptible(Dispatchers.IO) {
+                manager.acquireRootfsLease(workspace.root).also { acquired = it }
+            }
+            currentCoroutineContext().ensureActive()
+            lease
+        } catch (error: Throwable) {
+            acquired?.close()
+            throw error
+        }
+    }
+
     suspend fun installRootfs(
         id: String,
         url: String,
         onProgress: (RootfsInstallProgress) -> Unit = {},
+        maintenance: RootfsMaintenance? = null,
     ): Boolean {
         val workspace = dao.getById(id) ?: return false
         require(workspace.capabilities().rootfs) { "Rootfs is not available for ${workspace.type} workspaces" }
         updateShellState(workspace.id, WorkspaceShellStatus.INSTALLING.name, null)
         try {
-            runInterruptible(Dispatchers.IO) { rootfsInstaller.install(workspace.root, url, onProgress) }
+            runInterruptible(Dispatchers.IO) {
+                rootfsInstaller.install(workspace.root, url, onProgress, maintenance)
+            }
             val validationError = manager.rootfsValidationError(workspace.root)
             check(validationError == null) {
                 "RootFS activation completed, but the active RootFS failed validation: $validationError"
@@ -496,13 +532,13 @@ class WorkspaceRepository(
         taskId: String,
     ): WorkspaceBackgroundCommand = withBackend(id) { it.startBackgroundCommand(command, cwd, taskId) }
 
-    suspend fun delete(id: String): Boolean {
+    suspend fun delete(id: String, maintenance: RootfsMaintenance? = null): Boolean {
         val workspace = dao.getById(id) ?: return false
-        dao.deleteById(id)
         withContext(Dispatchers.IO) {
             sshPool.close(id)
-            manager.deleteWorkspace(workspace.root)
+            manager.deleteWorkspace(workspace.root, maintenance)
         }
+        dao.deleteById(id)
         cleanupAssistantReferences(id)
         return true
     }

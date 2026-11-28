@@ -36,9 +36,14 @@ class WorkspaceVM(
 
     fun delete(workspace: WorkspaceEntity) {
         viewModelScope.launch {
-            terminalSessionManager.closeWorkspace(workspace.root)
-            backgroundShellManager.killWorkspace(workspace.id)
-            repository.delete(workspace.id)
+            val maintenance = repository.requestRootfsMaintenance(workspace.id) ?: return@launch
+            try {
+                terminalSessionManager.closeWorkspace(workspace.root)
+                backgroundShellManager.killWorkspace(workspace.id)
+                repository.delete(workspace.id, maintenance)
+            } finally {
+                maintenance.close()
+            }
         }
     }
 }

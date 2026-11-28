@@ -14,6 +14,46 @@ class WorkspaceLayoutTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun rootfsMaintenanceBlocksNewLeasesUntilExistingLeaseIsReleased() {
+        val manager = WorkspaceManager(baseDir = tempFolder.newFolder("rootfs-gate"))
+        manager.ensureWorkspace("ws")
+        val activeLease = manager.acquireRootfsLease("ws")
+        val maintenance = manager.requestRootfsMaintenance("ws")
+        val maintenanceIdle = java.util.concurrent.CountDownLatch(1)
+        val newLeaseAttempting = java.util.concurrent.CountDownLatch(1)
+        val newLeaseAcquired = java.util.concurrent.CountDownLatch(1)
+        val newLease = java.util.concurrent.atomic.AtomicReference<RootfsLease?>()
+
+        val maintenanceThread = Thread {
+            maintenance.awaitIdle()
+            maintenanceIdle.countDown()
+        }.apply { start() }
+        val newUserThread = Thread {
+            newLeaseAttempting.countDown()
+            val lease = manager.acquireRootfsLease("ws")
+            newLease.set(lease)
+            newLeaseAcquired.countDown()
+        }.apply { start() }
+
+        try {
+            assertFalse(maintenanceIdle.await(100, java.util.concurrent.TimeUnit.MILLISECONDS))
+            assertTrue(newLeaseAttempting.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            assertFalse(newLeaseAcquired.await(100, java.util.concurrent.TimeUnit.MILLISECONDS))
+
+            activeLease.close()
+            assertTrue(maintenanceIdle.await(2, java.util.concurrent.TimeUnit.SECONDS))
+            maintenance.close()
+            assertTrue(newLeaseAcquired.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        } finally {
+            activeLease.close()
+            maintenance.close()
+            maintenanceThread.join(2_000)
+            newUserThread.join(2_000)
+            newLease.get()?.close()
+        }
+    }
+
+    @Test
     fun deeperApprovalMountOverridesWritableParent() {
         val manager = WorkspaceManager(baseDir = tempFolder.newFolder("workspaces"))
         val layout = manager.layout(

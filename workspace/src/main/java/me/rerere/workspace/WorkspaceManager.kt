@@ -16,6 +16,13 @@ class WorkspaceManager(
 ) {
     private val fileSystem = WorkspaceFileSystem(config)
     private val rootfsLocks = ConcurrentHashMap<String, Any>()
+    private val rootfsGates = ConcurrentHashMap<String, RootfsGate>()
+
+    private class RootfsGate {
+        val monitor = java.lang.Object()
+        var activeLeases = 0
+        var maintenance = false
+    }
 
     /** Serialize installer activation, recovery, startup cleanup and workspace deletion per root. */
     fun <T> withRootfsLock(root: String, block: () -> T): T {
@@ -63,6 +70,69 @@ class WorkspaceManager(
         }
     }
 
+    /**
+     * Close admission for new RootFS users. The caller can stop active sessions,
+     * then call awaitIdle() before changing the workspace.
+     */
+    fun requestRootfsMaintenance(root: String): RootfsMaintenance {
+        val key = workspaceDir(root).absolutePath
+        val gate = rootfsGates.computeIfAbsent(key) { RootfsGate() }
+        synchronized(gate.monitor) {
+            while (gate.maintenance) gate.monitor.wait()
+            gate.maintenance = true
+        }
+        return RootfsMaintenance(
+            root = root,
+            awaitIdleAction = {
+                synchronized(gate.monitor) {
+                    while (gate.activeLeases > 0) gate.monitor.wait()
+                }
+            },
+            releaseAction = {
+                synchronized(gate.monitor) {
+                    gate.maintenance = false
+                    gate.monitor.notifyAll()
+                }
+            },
+        )
+    }
+
+    /** Hold a lease for the complete lifetime of a process using this RootFS. */
+    fun acquireRootfsLease(root: String): RootfsLease {
+        val key = workspaceDir(root).absolutePath
+        val gate = rootfsGates.computeIfAbsent(key) { RootfsGate() }
+        synchronized(gate.monitor) {
+            while (gate.maintenance) gate.monitor.wait()
+            gate.activeLeases++
+        }
+        return RootfsLease {
+            synchronized(gate.monitor) {
+                check(gate.activeLeases > 0) { "RootFS lease underflow for $root" }
+                gate.activeLeases--
+                gate.monitor.notifyAll()
+            }
+        }
+    }
+
+    fun <T> withRootfsMaintenance(
+        root: String,
+        maintenance: RootfsMaintenance? = null,
+        block: () -> T,
+    ): T {
+        if (maintenance != null) {
+            require(maintenance.root == root) { "RootFS maintenance token belongs to another workspace" }
+            maintenance.awaitIdle()
+            return withRootfsLock(root, block)
+        }
+        val token = requestRootfsMaintenance(root)
+        return try {
+            token.awaitIdle()
+            withRootfsLock(root, block)
+        } finally {
+            token.close()
+        }
+    }
+
     fun ensureWorkspace(root: String): File {
         val dir = workspaceDir(root)
         filesDir(root).mkdirs()
@@ -88,9 +158,10 @@ class WorkspaceManager(
 
     fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
 
-    fun deleteWorkspace(root: String): Boolean = withRootfsLock(root) {
-        workspaceDir(root).deleteRecursively()
-    }
+    fun deleteWorkspace(root: String, maintenance: RootfsMaintenance? = null): Boolean =
+        withRootfsMaintenance(root, maintenance) {
+            workspaceDir(root).deleteRecursively()
+        }
 
     fun listFiles(
         root: String,
@@ -255,9 +326,16 @@ class WorkspaceManager(
         stdin: ByteArray? = null,
         shellCompatibilityMode: Boolean = false,
         extraMounts: List<WorkspaceBindMount> = emptyList(),
-    ): WorkspaceCommandResult = shellRunner.execute(
-        shellContext(root, command, cwd, timeoutMillis, stdin, shellCompatibilityMode, extraMounts)
-    )
+    ): WorkspaceCommandResult {
+        val lease = acquireRootfsLease(root)
+        return try {
+            shellRunner.execute(
+                shellContext(root, command, cwd, timeoutMillis, stdin, shellCompatibilityMode, extraMounts)
+            )
+        } finally {
+            lease.close()
+        }
+    }
 
     fun startBackgroundCommand(
         root: String,
@@ -266,10 +344,21 @@ class WorkspaceManager(
         id: String,
         shellCompatibilityMode: Boolean = false,
         extraMounts: List<WorkspaceBindMount> = emptyList(),
-    ): WorkspaceBackgroundCommand = shellRunner.startBackground(
-        shellContext(root, command, cwd, 0, null, shellCompatibilityMode, extraMounts),
-        id,
-    )
+    ): WorkspaceBackgroundCommand {
+        val lease = acquireRootfsLease(root)
+        return try {
+            LeasedWorkspaceBackgroundCommand(
+                shellRunner.startBackground(
+                    shellContext(root, command, cwd, 0, null, shellCompatibilityMode, extraMounts),
+                    id,
+                ),
+                lease,
+            )
+        } catch (error: Throwable) {
+            lease.close()
+            throw error
+        }
+    }
 
     private fun shellContext(
         root: String,
@@ -341,7 +430,7 @@ class WorkspaceManager(
         for (dir in roots) {
             val root = dir.name
             if (!root.matches(ROOT_NAME_REGEX)) continue
-            withRootfsLock(root) {
+            withRootfsMaintenance(root) {
                 // Keep the transactional backup intact until RootfsInstaller recovery has inspected it.
                 val temp = tempDir(root)
                 temp.listFiles()?.filterNot { it.name == "rootfs-backup" }?.forEach { it.deleteRecursively() }
@@ -412,3 +501,28 @@ data class RootfsLocation(
     val rootDir: File,
     val relativePath: String,
 )
+
+
+/** Thread-independent lease for a running RootFS process. */
+class RootfsLease internal constructor(private val releaseAction: () -> Unit) : AutoCloseable {
+    private val released = java.util.concurrent.atomic.AtomicBoolean(false)
+    override fun close() {
+        if (released.compareAndSet(false, true)) releaseAction()
+    }
+}
+
+/** Admission barrier used to stop new processes before workspace maintenance. */
+class RootfsMaintenance internal constructor(
+    val root: String,
+    private val awaitIdleAction: () -> Unit,
+    private val releaseAction: () -> Unit,
+) : AutoCloseable {
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun awaitIdle() {
+        check(!closed.get()) { "RootFS maintenance token is already closed" }
+        awaitIdleAction()
+    }
+    override fun close() {
+        if (closed.compareAndSet(false, true)) releaseAction()
+    }
+}

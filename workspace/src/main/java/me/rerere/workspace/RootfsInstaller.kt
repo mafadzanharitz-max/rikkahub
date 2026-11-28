@@ -30,7 +30,8 @@ class RootfsInstaller(
         root: String,
         url: String,
         onProgress: (RootfsInstallProgress) -> Unit = {},
-    ) = manager.withRootfsLock(root) {
+        maintenance: RootfsMaintenance? = null,
+    ) = manager.withRootfsMaintenance(root, maintenance) {
         require(url.isNotBlank()) { "Rootfs download url is required" }
         manager.ensureWorkspace(root)
         val format = ArchiveFormat.fromUrl(url)
@@ -59,7 +60,7 @@ class RootfsInstaller(
     }
 
     /** Recover an interrupted installation before workspace integrity is evaluated. */
-    fun recoverBackup(root: String) = manager.withRootfsLock(root) {
+    fun recoverBackup(root: String) = manager.withRootfsMaintenance(root) {
         recoverRootfsBackup(
             manager.linuxDir(root),
             File(manager.tempDir(root), "rootfs-backup"),
