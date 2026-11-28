@@ -48,8 +48,9 @@ class ExampleUnitTest {
         File(manager.linuxDir(root), "etc").mkdirs()
         assertFalse(manager.hasRootfs(root))
 
+        listOf("etc", "usr", "var", "tmp").forEach { File(manager.linuxDir(root), it).mkdirs() }
         File(manager.linuxDir(root), "bin").mkdirs()
-        File(manager.linuxDir(root), "bin/sh").writeText("#!/bin/sh\n")
+        File(manager.linuxDir(root), "bin/sh").writeBytes(armv7TestShellElf())
         assertTrue(manager.hasRootfs(root))
     }
 
@@ -160,7 +161,10 @@ class ExampleUnitTest {
         File(linuxDir, "etc/resolv.conf").writeText("nameserver 127.0.0.53\n")
         File(linuxDir, "etc/group").writeText("root:x:0:\n")
 
-        RootfsPatcher().patch(
+        val chmodModes = mutableMapOf<String, Int>()
+        RootfsPatcher { file, mode ->
+            chmodModes[file.relativeTo(linuxDir).path] = mode
+        }.patch(
             linuxDir,
             RootfsPatchOptions(
                 nameservers = listOf("9.9.9.9", "8.8.8.8"),
@@ -186,6 +190,8 @@ class ExampleUnitTest {
         assertTrue(File(linuxDir, "etc/group").readText().contains("android_gid_9997:x:9997:"))
         assertTrue(File(linuxDir, "tmp").canWrite())
         assertTrue(File(linuxDir, "var/tmp").canWrite())
+        assertEquals(0x3ff, chmodModes["tmp"])
+        assertEquals(0x3ff, chmodModes["var/tmp"])
         assertTrue(File(linuxDir, "root").isDirectory)
     }
 

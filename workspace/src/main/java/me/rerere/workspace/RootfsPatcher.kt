@@ -1,9 +1,12 @@
 package me.rerere.workspace
 
+import android.system.Os
 import java.io.File
 import java.nio.file.Files
 
-class RootfsPatcher {
+class RootfsPatcher(
+    private val chmod: (File, Int) -> Unit = { file, mode -> Os.chmod(file.absolutePath, mode) },
+) {
     fun patch(
         linuxDir: File,
         options: RootfsPatchOptions = RootfsPatchOptions(),
@@ -146,6 +149,8 @@ class RootfsPatcher {
             dir.setReadable(true, false)
             dir.setWritable(true, false)
             dir.setExecutable(true, false)
+            // Linux temporary directories must be world-writable with the sticky bit (01777).
+            chmod(dir, 0x3ff)
         }
         File(linuxDir, "root").apply {
             setReadable(true, true)

@@ -367,9 +367,16 @@ class WorkspaceManager(
 
         private val ROOT_NAME_REGEX = Regex("[A-Za-z0-9._-]+")
 
-        /** Rootfs 是否可用, 以 /bin/sh 存在为准 */
-        fun isUsableRootfs(linuxDir: File): Boolean =
-            linuxDir.isDirectory && linuxDir.hasRootfsEntry("bin/sh")
+        /** RootFS is usable only when its required layout and ARMHF ELF shell validate. */
+        fun isUsableRootfs(linuxDir: File): Boolean {
+            if (!linuxDir.isDirectory) return false
+            return try {
+                Armv7Rootfs.validate(linuxDir)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
 
         /** Rootfs 内使用的 shell: 优先 bash, 没有时 (如 Alpine minirootfs) 回退到 /bin/sh */
         fun rootfsShell(linuxDir: File): String =

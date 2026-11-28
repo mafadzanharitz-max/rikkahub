@@ -57,8 +57,12 @@ class RootfsInstallerTest {
         val archive = tmp.newFile("rootfs.tar.gz")
         GZIPOutputStream(archive.outputStream()).use { out ->
             out.writeTarEntry("./", '5', ByteArray(0))
+            out.writeTarEntry("./etc/", '5', ByteArray(0))
+            out.writeTarEntry("./usr/", '5', ByteArray(0))
+            out.writeTarEntry("./var/", '5', ByteArray(0))
+            out.writeTarEntry("./tmp/", '5', ByteArray(0))
             out.writeTarEntry("./bin/", '5', ByteArray(0))
-            out.writeTarEntry("./bin/busybox", '0', "busybox".toByteArray())
+            out.writeTarEntry("./bin/busybox", '0', armv7TestShellElf())
             out.writeTarEntry("./bin/sh", '2', ByteArray(0), linkName = "/bin/busybox")
             out.write(ByteArray(TAR_BLOCK * 2))
         }
@@ -66,7 +70,7 @@ class RootfsInstallerTest {
         val target = tmp.newFolder("out")
         createInstaller().extractTar(archive, target) {}
 
-        assertEquals("busybox", File(target, "bin/busybox").readText())
+        assertTrue(File(target, "bin/busybox").readBytes().contentEquals(armv7TestShellElf()))
         assertEquals("/bin/busybox", Files.readSymbolicLink(File(target, "bin/sh").toPath()).toString())
         assertTrue(WorkspaceManager.isUsableRootfs(target))
         assertEquals("/bin/sh", WorkspaceManager.rootfsShell(target))
@@ -103,8 +107,9 @@ class RootfsInstallerTest {
         val root = "local"
         manager.ensureWorkspace(root)
         val backup = File(manager.tempDir(root), "rootfs-backup").apply { mkdirs() }
+        listOf("etc", "usr", "var", "tmp").forEach { File(backup, it).mkdirs() }
         File(backup, "bin").mkdirs()
-        File(backup, "bin/sh").writeText("shell")
+        File(backup, "bin/sh").writeBytes(armv7TestShellElf())
 
         RootfsInstaller(manager).recoverBackup(root)
 

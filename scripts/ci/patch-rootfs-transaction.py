@@ -208,9 +208,9 @@ def apply(root: Path) -> None:
         // Reproduce the exact crash window: old active RootFS has been renamed
         // to backup, but staged RootFS has not yet been moved into the active path.
         val linux = tmp.newFolder("linux")
-        File(linux, "bin").mkdirs()
-        File(linux, "bin/sh").writeText("original-shell")
-        File(linux, "etc").mkdirs()
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
         File(linux, "etc/os-release").writeText("original-rootfs")
         val backup = File(tmp.root, "backup")
         assertTrue("Simulated pre-crash rename must succeed", linux.renameTo(backup))
@@ -219,7 +219,7 @@ def apply(root: Path) -> None:
         // A new installer instance represents a fresh process after restart.
         createInstaller().recoverRootfsBackup(linux, backup)
 
-        assertEquals("original-shell", File(linux, "bin/sh").readText())
+        assertTrue(File(linux, "usr/bin/dash").readBytes().contentEquals(armv7TestShellElf()))
         assertEquals("original-rootfs", File(linux, "etc/os-release").readText())
         assertTrue(WorkspaceManager.isUsableRootfs(linux))
         assertFalse(backup.exists())
@@ -228,14 +228,15 @@ def apply(root: Path) -> None:
     @Test
     fun backupRecoveryRemovesStaleBackupWhenActiveRootfsIsUsable() {
         val linux = tmp.newFolder("linux")
-        File(linux, "bin").mkdirs()
-        File(linux, "bin/sh").writeText("shell")
+        listOf("etc", "usr", "var", "tmp").forEach { File(linux, it).mkdirs() }
+        File(linux, "usr/bin").mkdirs()
+        File(linux, "usr/bin/dash").writeBytes(armv7TestShellElf())
         val backup = tmp.newFolder("backup")
         File(backup, "old-rootfs").writeText("old")
 
         createInstaller().recoverRootfsBackup(linux, backup)
 
-        assertEquals("shell", File(linux, "bin/sh").readText())
+        assertTrue(File(linux, "usr/bin/dash").readBytes().contentEquals(armv7TestShellElf()))
         assertFalse(backup.exists())
     }
 
