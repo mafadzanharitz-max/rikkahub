@@ -32,8 +32,6 @@ data class WorkspaceEntity(
     val root: String,
     @ColumnInfo("shell_status")
     val shellStatus: String = WorkspaceShellStatus.DISABLED.name,
-    @ColumnInfo("shell_status_reason")
-    val shellStatusReason: String? = null,
     @ColumnInfo("created_at")
     val createdAt: Long,
     @ColumnInfo("updated_at")
@@ -53,6 +51,8 @@ data class WorkspaceEntity(
     // 挂载进 Rootfs 的共享存储目录 (WorkspaceStorageMount 列表的 JSON), 只对本地工作区生效
     @ColumnInfo("storage_mounts", defaultValue = "[]")
     val storageMounts: String = "[]",
+    @ColumnInfo("shell_status_reason")
+    val shellStatusReason: String? = null,
 ) {
     fun isSsh(): Boolean = type == WorkspaceType.SSH.name
 

@@ -78,25 +78,30 @@ class WorkspaceRepository(
             val validationError = manager.rootfsValidationError(workspace.root)
             when (workspace.shellStatus) {
                 WorkspaceShellStatus.INSTALLING.name -> {
-                    if (validationError == null) updateShellState(
-                        workspace.id, WorkspaceShellStatus.READY.name,
-                        "The previous installation was interrupted; the restored active RootFS passed validation.",
-                    ) else updateShellState(
-                        workspace.id, WorkspaceShellStatus.BROKEN.name,
-                        "RootFS installation was interrupted and the active RootFS is invalid: $validationError",
+                    val hasRootfs = validationError == null
+                    updateShellState(
+                        workspace.id,
+                        if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name else WorkspaceShellStatus.BROKEN.name,
+                        if (hasRootfs) {
+                            "Installation was interrupted; the restored active RootFS passed validation and remains usable."
+                        } else {
+                            "Installation was interrupted and the active RootFS failed validation: $validationError"
+                        },
                     )
                 }
                 WorkspaceShellStatus.READY.name -> if (validationError != null) {
                     Log.w(TAG, "RootFS validation failed: id=${workspace.id}: $validationError")
                     updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name, "Active RootFS validation failed: $validationError")
                 }
-                WorkspaceShellStatus.INTERRUPTED.name -> {
-                    if (validationError == null) updateShellState(
-                        workspace.id, WorkspaceShellStatus.READY.name,
-                        "The interrupted installation was recovered; the active RootFS passed validation.",
-                    ) else updateShellState(
+                WorkspaceShellStatus.INTERRUPTED.name -> if (validationError != null) {
+                    updateShellState(
                         workspace.id, WorkspaceShellStatus.BROKEN.name,
-                        "Active RootFS validation failed after interrupted installation: $validationError",
+                        "The interrupted installation left an invalid active RootFS: $validationError",
+                    )
+                } else if (workspace.shellStatusReason.isNullOrBlank()) {
+                    updateShellState(
+                        workspace.id, WorkspaceShellStatus.INTERRUPTED.name,
+                        "Installation was interrupted; the active RootFS passed validation and remains usable.",
                     )
                 }
                 WorkspaceShellStatus.BROKEN.name -> if (validationError == null) {
@@ -242,13 +247,22 @@ class WorkspaceRepository(
                 rootfsInstaller.recoverBackup(workspace.root)
                 val validationError = manager.rootfsValidationError(workspace.root)
                 when (dao.getById(id)?.shellStatus) {
-                    WorkspaceShellStatus.INSTALLING.name, WorkspaceShellStatus.INTERRUPTED.name -> {
-                        if (validationError == null) updateShellState(
-                            id, WorkspaceShellStatus.READY.name,
-                            "The interrupted installation was recovered; the active RootFS passed validation.",
-                        ) else updateShellState(
+                    WorkspaceShellStatus.INSTALLING.name -> {
+                        val hasRootfs = validationError == null
+                        updateShellState(
+                            id,
+                            if (hasRootfs) WorkspaceShellStatus.INTERRUPTED.name else WorkspaceShellStatus.BROKEN.name,
+                            if (hasRootfs) {
+                                "Installation was interrupted; the restored active RootFS passed validation and remains usable."
+                            } else {
+                                "Installation was interrupted and active RootFS validation failed: $validationError"
+                            },
+                        )
+                    }
+                    WorkspaceShellStatus.INTERRUPTED.name -> if (validationError != null) {
+                        updateShellState(
                             id, WorkspaceShellStatus.BROKEN.name,
-                            "RootFS recovery completed, but active validation failed: $validationError",
+                            "The interrupted installation left an invalid active RootFS: $validationError",
                         )
                     }
                     WorkspaceShellStatus.BROKEN.name -> if (validationError == null) {
@@ -294,24 +308,26 @@ class WorkspaceRepository(
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
                 val validationError = manager.rootfsValidationError(workspace.root)
-                if (validationError == null) updateShellState(
-                    workspace.id, WorkspaceShellStatus.READY.name,
-                    "RootFS installation was cancelled; the previous active RootFS remains valid.",
-                ) else updateShellState(
+                updateShellState(
                     workspace.id, WorkspaceShellStatus.INTERRUPTED.name,
-                    "RootFS installation was cancelled and the active RootFS is not valid: $validationError",
+                    if (validationError == null) {
+                        "RootFS installation was cancelled; the previous active RootFS passed validation and remains usable."
+                    } else {
+                        "RootFS installation was cancelled and the active RootFS failed validation: $validationError"
+                    },
                 )
             }
             throw e
         } catch (e: InterruptedException) {
             withContext(NonCancellable) {
                 val validationError = manager.rootfsValidationError(workspace.root)
-                if (validationError == null) updateShellState(
-                    workspace.id, WorkspaceShellStatus.READY.name,
-                    "RootFS installation was interrupted; the previous active RootFS remains valid.",
-                ) else updateShellState(
+                updateShellState(
                     workspace.id, WorkspaceShellStatus.INTERRUPTED.name,
-                    "RootFS installation was interrupted and the active RootFS is not valid: $validationError",
+                    if (validationError == null) {
+                        "RootFS installation was interrupted; the previous active RootFS passed validation and remains usable."
+                    } else {
+                        "RootFS installation was interrupted and the active RootFS failed validation: $validationError"
+                    },
                 )
             }
             throw CancellationException("Rootfs install cancelled").also { it.initCause(e) }
