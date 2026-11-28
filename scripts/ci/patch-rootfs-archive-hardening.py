@@ -370,10 +370,10 @@ def apply(root):
 
 '''
     marker = "    private fun download(\n"
-    if ("internal fun verifySha256(" not in s) {
-        if (s.count(marker) != 1) raise SystemExit("RootFS checksum helper insertion point changed")
+    if "internal fun verifySha256(" not in s:
+        if s.count(marker) != 1:
+            raise SystemExit("RootFS checksum helper insertion point changed")
         s = s.replace(marker, checksum_helpers + marker, 1)
-    }
     s = once(s,
         '            download(url, archive, onProgress)\n            extractTar(archive, stagingDir, format, onProgress)',
         '            download(url, archive, onProgress)\n            verifyOfficialArchive(url, archive)\n            extractTar(archive, stagingDir, format, onProgress)',
